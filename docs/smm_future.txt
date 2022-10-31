@@ -1,0 +1,4 @@
+- https://community.amd.com/t5/business/amd-and-microsoft-secured-core-pc/ba-p/418204
+- https://www.intel.com/content/dam/www/central-libraries/us/en/documents/drtm-based-computing-whitepaper.pdf
+- https://microsoft.github.io/mu/dyn/mu_basecore/Docs/feature_memory_protection/
+
