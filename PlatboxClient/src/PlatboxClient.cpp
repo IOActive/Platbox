@@ -115,6 +115,7 @@ void show_cli_help() {
 	printf("chipset -> throws information about several platform configuration registers\n");	
 	printf("dump_spi <filename (optional)> -> dumps the SPI Flash content into <filename> or 'spi_flash.bin'\n");	
 	printf("s3bootscript <filename (optional)> -> dumps the S3 bootscript into <filename> or 's3_bootscript.bin'\n");
+	printf("s3bootscript <RT_CODE_START> <RT_CODE_END> <filename (optional)>\n");
 	#ifdef _WIN32
 		printf("kernelhook patch ffff89868ba1ce30 -> creates a -breakpoint-hook into the ffff89868ba1ce30 callback\n");
 		printf("kernelhook patch ffff89868ba1ce30 909090C3 -> creates a NOP NOP NOP RET hook into the ffff89868ba1ce30 callback\n");
@@ -211,10 +212,18 @@ void run_cli() {
 		}
 
 		else if (!strcmp(_argv[0], "s3bootscript")) {
-			if (_argc > 1) {
+			if (_argc == 1) {
+				smm_dump_s3_bootscript("s3_bootscript.bin");					
+			} else if (_argc == 2) {
 				smm_dump_s3_bootscript(_argv[1]);				
-			} else {
-				smm_dump_s3_bootscript("s3_bootscript.bin");	
+			} else if (_argc > 2) {
+				UINT64 rt_start = strtoull(_argv[1], NULL, 16);
+				UINT64 rt_end   = strtoull(_argv[2], NULL, 16);
+				if (_argc > 3) {
+					smm_dump_s3_bootscript_manual(rt_start, rt_end, _argv[1]);
+				} else {
+					smm_dump_s3_bootscript_manual(rt_start, rt_end, "s3_bootscript.bin");
+				}				
 			}
 		}		
 		

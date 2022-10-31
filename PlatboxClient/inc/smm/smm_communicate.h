@@ -5,7 +5,7 @@
 #define SMM_CORE_PRIVATE_DATA_SIGNATURE "smmc"
 
 void smm_dump_s3_bootscript(const char *output_filename);
-
+void smm_dump_s3_bootscript_manual(UINT64 rtcode_start, UINT64 rtcode_end, const char *output_filename);
 
 #define RETURN_SUCCESS  0
 

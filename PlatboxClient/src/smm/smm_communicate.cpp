@@ -80,7 +80,9 @@ UINT64 _get_smm_core_private() {
     return g_SMMCorePrivateAddr;
 }
 
-void smm_dump_s3_bootscript(const char *output_filename) {
+
+void __smm_dump_s3_bootscript(void *ptr_smm_core_private, const char *output_filename) {
+
     NTSTATUS status;
 
     GUID gEfiSmmLockBoxCommunicationGuid;    
@@ -88,17 +90,8 @@ void smm_dump_s3_bootscript(const char *output_filename) {
 
     GUID mBootScriptDataGuid;
     to_guid("AEA6B965-DCF5-4311-B4B8-0F12464494D2", &mBootScriptDataGuid);
-
-   
-
-    void *ptr = (void *) _get_smm_core_private();
-    if (!ptr) {
-        printf(" - smm_dump_s3_bootscript: failed to find SMM_CORE_PRIVATE_DATA\n");
-        return;
-    }
     
-    printf("g_SMMCorePrivateAddr: %016llx\n", g_SMMCorePrivateAddr);    
-    
+
     const UINT alloc_size = PAGE_SIZE * 20;
 
     struct alloc_user_physmem user_page = {0};
@@ -134,7 +127,7 @@ void smm_dump_s3_bootscript(const char *output_filename) {
     lockbox_call->Guid                = mBootScriptDataGuid;
     
 
-    pSmmCorePrivateData = (SMM_CORE_PRIVATE_DATA *) ptr;    
+    pSmmCorePrivateData = (SMM_CORE_PRIVATE_DATA *) ptr_smm_core_private;    
 
     pSmmCorePrivateData->CommunicationBuffer = (VOID *) user_page.pa;
     pSmmCorePrivateData->BufferSize          = buffer_size;
@@ -173,7 +166,37 @@ void smm_dump_s3_bootscript(const char *output_filename) {
     unmap_physical_memory((void *) user_page.va, user_page.size);
 
 exit:
-    // Do not free this memory, as this is stored in the global variable
-    //unmap_physical_memory((void *) ((UINT64)ptr & 0xFFFFFFFFFFFFF000), PAGE_SIZE);
     return;
+}
+
+
+
+void smm_dump_s3_bootscript_manual(UINT64 rtcode_start, UINT64 rtcode_end, const char *output_filename) {
+
+    void *ptr = search_in_physical_memory(rtcode_start, rtcode_end,
+        (BYTE *) SMM_CORE_PRIVATE_DATA_SIGNATURE,  strlen(SMM_CORE_PRIVATE_DATA_SIGNATURE));
+
+    if (!ptr) {
+        printf("SMM_CORE_PRIVATE_DATA was not found in the provided range\n");
+        return;
+    }
+
+    __smm_dump_s3_bootscript(ptr, output_filename);
+     
+    unmap_physical_memory((void *) ((UINT64)ptr & 0xFFFFFFFFFFFFF000), PAGE_SIZE);
+    
+}
+
+void smm_dump_s3_bootscript(const char *output_filename) {
+  
+
+    void *ptr = (void *) _get_smm_core_private();
+    if (!ptr) {
+        printf(" - smm_dump_s3_bootscript: failed to find SMM_CORE_PRIVATE_DATA\n");
+        return;
+    }
+    
+    printf("g_SMMCorePrivateAddr: %016llx\n", g_SMMCorePrivateAddr);    
+
+    __smm_dump_s3_bootscript(ptr, output_filename);
 }
