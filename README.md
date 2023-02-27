@@ -31,13 +31,26 @@ Platbox is a tool that helps assessing the security of the platform:
 
 The project is divided as follows:
 
-- Platbox: kernel drivers used for Linux and Windows.
-- PlatboxClient: the usermode component that loads the kernel driver and access to al the previously listed features.
+- PlatboxDrv: kernel drivers used for Linux and Windows.
+- PlatboxLib: the usermode component that loads the kernel driver and provides access to all the previously listed features.
+- PlatboxCli: a console client that uses the library.
+- Pocs: an example of a program using features from the libary. 
 
 
-## TODOs
+## Compilation Steps
 
-- Implement DSE Bypass
-- Retrieve the EFI memory map and SMM_CORE_PRIVATE struct from Windows (in progress)
-- Give the option to perform register changes in all the cores
-- Grab SMI port automatically and remove hardcoded 0xb2
+### Windows
+
+```
+mkdir build
+cd build
+cmake -G "Visual Studio 17 2022" -A x64 -S .. -B "build64"
+cmake --build build64/ --target platbox_cli
+```
+
+#### Release Build
+
+```
+cmake -G "Visual Studio 17 2022" -A x64 -S .. -B "build64" 
+cmake --build build64/ --target platbox_cli --config Release
+```

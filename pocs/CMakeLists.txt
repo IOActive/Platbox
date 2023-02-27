@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 # Maps to Visual Studio solution file (Tutorial.sln)
 # The solution will have all targets (exe, lib, dll) 
 # as Visual Studio projects (.vcproj)
-project (PlatboxClient)
+project (example)
 
 include_directories (
     "${PROJECT_SOURCE_DIR}/../PlatboxLib/inc"
@@ -30,11 +30,11 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
 set (PROJECT_SOURCES 
-    PlatboxClient.cpp
+    poc.cpp
 )
 
 # main executable
-add_executable(platbox_cli  "${PROJECT_SOURCES}")
+add_executable(example  "${PROJECT_SOURCES}")
 
 # link lib
-target_link_libraries (platbox_cli  platbox_lib)
+target_link_libraries (example  platbox_lib)
