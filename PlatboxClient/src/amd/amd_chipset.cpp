@@ -14,7 +14,7 @@ DWORD64 g_MmioCfgBaseAddr;
 void _read_lpc_isa_bridge() {	
 	memset(&g_lpc_isa_bridge_registers, 0x00, sizeof(g_lpc_isa_bridge_registers));
     DWORD *pw = (DWORD *) &g_lpc_isa_bridge_registers;
-    for (int i = 0 ; i < sizeof(LPC_ISA_Bridge); i++) {
+    for (int i = 0; i < sizeof(g_lpc_isa_bridge_registers) / sizeof(DWORD); i++) {
         *pw = read_pci_dword(0, 0x14, 3, i);
         pw++;
     }
