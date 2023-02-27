@@ -712,7 +712,7 @@ void amd_dump_spi_flash(const char *output_filename) {
     lpc_rom_addr_range2.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_StartAddress << 16;
     lpc_rom_addr_range2.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_EndAddress << 16) | 0xffff;
 
-    size_t rom_size = lpc_rom_addr_range2.EndAddr - lpc_rom_addr_range2.StartAddr;
+    size_t rom_size = lpc_rom_addr_range2.EndAddr - lpc_rom_addr_range2.StartAddr + 1;
     char *rom_data  = (char *) calloc(1, rom_size);
     
     debug_print(" -> About to read %08x bytes from %016llx pa\n", rom_size, lpc_rom_addr_range2.StartAddr);
