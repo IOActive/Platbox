@@ -182,7 +182,7 @@ void read_physical_memory(UINT64 address, UINT32 size, PVOID buffer, BOOL bPrint
 				}
 
 				if (bPrint) {
-					print_memory(cur_address, (char *)physmem_addr, PAGE_SIZE);
+					print_memory(cur_address, (char *)physmem_addr, auxSize);
 				}
 
 				munmap(physmem_addr, PAGE_SIZE);
