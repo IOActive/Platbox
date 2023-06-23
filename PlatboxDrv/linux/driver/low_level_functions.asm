@@ -13,27 +13,88 @@ global _wrmsr
 
 section .text
 
-; void _swsmi( smi_code_data, rax_value, rbx_value, rcx_value, rdx_value, rsi_value, rdi_value);
+; void _swsmi(SW_SMI_CALL *smi_call);
 _swsmi:
+    push r15
+    push r14
+    push r13
+    push r12
+    push r11
+    push r10
+    push  r9
+    push  r8
+    push rsi
+    push rdx
     push rbx
+    push rcx
+    push rdi
 
-    ;   RAX will get partially overwritten (AX) by _smi_code_data (which is passed in RCX)
-    ;   RDX will get partially overwritten (DX) by the value of APMC port (= 0x00B2)
-    mov rax, rsi ; rax_value
-    mov ax, di   ; smi_code_data
-    mov rbx, rdx ; rbx value
-    ; rcx already in its right value
-    mov rdx, r8  ; rdx value
-    mov rsi, r9  ; rsi value
-    mov rdi, [rsp + 010h] ; rdi_value
-	mov dx, 0B2h
+    ; set registers to state of provided structure
+    mov r15, [rdi + 080h]
+    mov r14, [rdi + 078h]
+    mov r13, [rdi + 070h]
+    mov r12, [rdi + 068h]
+    mov r11, [rdi + 060h]
+    mov r10, [rdi + 058h]
+    mov  r9, [rdi + 050h]
+    mov  r8, [rdi + 048h]
+    ; rdi handled later
+    mov rsi, [rdi + 038h]
+    mov rdx, [rdi + 030h]
+	mov rcx, [rdi + 028h]
+    mov rbx, [rdi + 020h]
 
+    ; The trigger port might be different than 0xB2 in AMD
+    mov dx, [rdi + 010h] 
+
+    mov rax,  [rdi + 08h] 
+    shl rax, 8
+    or rax,  [rdi] 
+
+    mov rdi, [rdi + 040h] ; get rdi value just before the OUT instruction
+    
     ; this OUT instruction will write WORD value (smi_code_data) to ports 0xB2 and 0xB3 (SW SMI control and data ports)
     out dx, ax
 
-    pop rbx
-    ret
+    ;; write to structure the changes that could have happened in SMM
 
+    push rax; save return RAX from SMI
+    mov rax, [rsp + 08h]; rax points to original RDI
+
+    mov [rax + 080h], r15
+    mov [rax + 078h], r14
+    mov [rax + 070h], r13
+    mov [rax + 068h], r12
+    mov [rax + 060h], r11
+    mov [rax + 058h], r10
+    mov [rax + 050h],  r9
+    mov [rax + 048h],  r8
+    mov [rax + 040h], rdi
+    mov [rax + 038h], rsi
+    mov [rax + 030h], rdx
+    mov [rax + 028h], rcx
+    mov [rax + 020h], rbx
+
+    pop r15 ; retrieve original rax
+    mov [rax + 018h], r15
+
+    pop rdi
+    pop rcx
+    pop rbx
+    pop rdx
+    pop rsi
+    pop r8
+    pop r9
+    pop r10
+    pop r11
+    pop r12
+    pop r13
+    pop r14
+    pop r15
+
+    xor rax, rax
+
+    ret
 
 ; _read_pci_compatible_configuration_space(UINT8 Bus, UINT8 Device, UINT8 Function, PVOID pOut)
 ; Reads the 256 bytes of PCI Configuration data from a BDF into pOut

@@ -888,11 +888,7 @@ int _wait_spi_cycle(volatile _BIOS_HSFSTS_CTL *hsfsts_ctl) {
 			break;			
 		}
 		printf("Waiting for SPI Cycle to finish...\n");
-#ifdef __linux__
-		usleep(100);
-#else
-		Sleep(100);
-#endif
+		doSleep(100);
 		iterations--;
 	}
 

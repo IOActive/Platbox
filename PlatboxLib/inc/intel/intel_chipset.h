@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include "types.h"
 
+#define INTEL_SMI_TRIGGER_PORT 0xB2
+
 #define SPI_BIOS_MMIO_BIOS_BFPREG_OFFSET 0
 #define SPI_BIOS_MMIO_BIOS_HSFSTS_CTL 4
 #define SPI_BIOS_MMIO_BIOS_FADDR 8

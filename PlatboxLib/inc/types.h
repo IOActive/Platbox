@@ -20,6 +20,7 @@
     typedef void * PVOID;
     typedef unsigned short WORD;
     typedef unsigned short USHORT;
+    typedef USHORT UINT16;
     typedef unsigned long ULONG;
     typedef ULONG* PULONG;
     typedef unsigned int DWORD;

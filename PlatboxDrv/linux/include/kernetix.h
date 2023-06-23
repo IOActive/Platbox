@@ -28,8 +28,8 @@ struct _kernel_write
   void *old_value;  
 };
 
-
-
+typedef unsigned short USHORT;
+typedef USHORT UINT16;
 typedef unsigned int UINT;
 typedef UINT UINT32;
 typedef char CHAR;
@@ -63,9 +63,9 @@ typedef int NTSTATUS;
 #define CHAR_BIT 8
 #define UCHAR_MAX 255
 
-void _swsmi(short smi_code_data,
-   __u64 rax_value, __u64 rbx_value, __u64 rcx_value, __u64 rdx_value, 
-    __u64 rsi_value, __u64 rdi_value);
+#define IO_SIZE_BYTE  0
+#define IO_SIZE_WORD  1
+#define IO_SIZE_DWORD 2
 	
 void _read_pci_compatible_configuration_space(UINT8 Bus,
      UINT8 Device, UINT8 Function, PVOID pOut);
@@ -82,17 +82,27 @@ void _wrmsr(int MSR, UINT64 Value);
 
 
 typedef struct _SW_SMI_CALL {
-	UINT8 SwSmiNumber; // 0xb2
-	UINT8 SwSmiData; // 0xb3
+	UINT64 SwSmiNumber; // 0xb2
+	UINT64 SwSmiData; // 0xb3
+	UINT64 TriggerPort;
 	UINT64 rax;
 	UINT64 rbx;
 	UINT64 rcx;
 	UINT64 rdx;
 	UINT64 rsi;
 	UINT64 rdi;
+	UINT64 r8;
+	UINT64 r9;
+	UINT64 r10;
+	UINT64 r11;
+	UINT64 r12;
+	UINT64 r13;
+	UINT64 r14;
+	UINT64 r15;
+	// append maybe?
 } SW_SMI_CALL, *PSW_SMI_CALL;
 
-
+void _swsmi(SW_SMI_CALL *smi_call);
 
 typedef struct _READ_PCI_CONFIGURATION_SPACE_CALL {
 	UINT8 bus;
@@ -144,7 +154,11 @@ typedef struct _WRITE_MSR_CALL {
 	UINT64 value;
 } WRITE_MSR_CALL, *PWRITE_MSR_CALL;
 
-
+typedef struct _IO_PORT_CALL {
+	UINT8  size;
+	UINT16 port;
+	UINT32 data;
+} IO_PORT_CALL, *PIO_PORT_CALL;
 
 /* Use 'n' as magic number */
 #define KERNETIX_IOC_MAGIC  'n'
@@ -176,3 +190,5 @@ typedef struct _WRITE_MSR_CALL {
 
 #define IOCTL_GET_EFI_MEMMAP_ADDRESS _IOWR(KERNETIX_IOC_MAGIC,  20, void *)
 
+#define IOCTL_READ_IO_PORT _IOR(KERNETIX_IOC_MAGIC,  21, void *)
+#define IOCTL_WRITE_IO_PORT _IOR(KERNETIX_IOC_MAGIC,  22, void *)

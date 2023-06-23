@@ -23,6 +23,7 @@
 #include "kernetix.h"
 
 #include <linux/efi.h>
+#include <asm/io.h>
 
 ///////////////////////////////////////////////////////////////////////////
 
@@ -76,7 +77,8 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
 	void __user * p = (void __user *)carg;
 	
 	struct _kernel_write *kwrite = NULL;
-	struct _kernel_read *kread = NULL;	
+	struct _kernel_read *kread = NULL;
+  IO_PORT_CALL _io;
 	unsigned long _cr3;
 
   printk(KERN_ALERT "==> The IOCTL for %#08x was called\n", cmd);
@@ -154,9 +156,7 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
 
         printk(KERN_ALERT "Value of rbx --> %llx\n", swsmi_call->rbx );
 
-        __u16 b2b3 = ((swsmi_call->SwSmiData << 8) | swsmi_call->SwSmiNumber);
-        _swsmi(b2b3, swsmi_call->rax, swsmi_call->rbx,
-            swsmi_call->rcx, swsmi_call->rdx, swsmi_call->rsi, swsmi_call->rdi);
+        _swsmi(swsmi_call);
 
         kfree(swsmi_call);
         break;
@@ -392,7 +392,54 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
         //printk(KERN_ALERT "efi_memmap: %016lx --> addr_result:[%016lx]\n", &efi.memmap, addr_result);
         put_user( (long unsigned int *) &efi.memmap, (unsigned long **)addr_result );    
 
-        break;    
+        break;
+
+      case IOCTL_READ_IO_PORT:
+        if (copy_from_user(&_io, p, sizeof(IO_PORT_CALL))) {
+                return -EINVAL;
+        }
+
+        _io.data = 0;
+
+        switch(_io.size) {
+                case IO_SIZE_BYTE:
+                        _io.data = inb(_io.port);
+                        break;
+                case IO_SIZE_WORD:
+                        _io.data = inw(_io.port);
+                        break;
+                case IO_SIZE_DWORD:
+                        _io.data = inl(_io.port);
+                        break;
+                default:
+                        return -EINVAL;
+        }
+
+        if (copy_to_user(p, &_io, sizeof(IO_PORT_CALL))) {
+                pr_err("copy_to_user error!!\n");
+        }
+        break;
+
+      case IOCTL_WRITE_IO_PORT:
+        if (copy_from_user(&_io, p, sizeof(IO_PORT_CALL))) {
+            return -EINVAL;
+        }
+
+        switch(_io.size) {
+                case IO_SIZE_BYTE:
+                        outb((uint8_t) _io.data, _io.port);
+                        break;
+                case IO_SIZE_WORD:
+                        outw((uint16_t) _io.data, _io.port);
+                        break;
+                case IO_SIZE_DWORD:
+                        outl(_io.data, _io.port);
+                        break;
+                default:
+                        return -EINVAL;
+        }
+
+        break;
   }
 
   return 0;

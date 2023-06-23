@@ -34,3 +34,5 @@ void get_chipset_information();
 void dump_spi_flash(const char *output_filename);
 
 void get_tseg_region(UINT64 *base, UINT32 *size);
+
+UINT16 get_smi_trigger_port();

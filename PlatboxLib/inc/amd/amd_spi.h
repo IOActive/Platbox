@@ -15,7 +15,7 @@ typedef struct _ALT_SPI_CS {
 #define SPI_INDEX_MODE_READ_BLOCK_BITS 6
 #define SPI_INDEX_MODE_READ_BLOCK_SIZE 64
 #define SPI_INDEX_MODE_READ_BLOCK_MASK 0x3F
-#define SPI_INDEX_MODE_WRITE_BLOCK_FIFO 8
+#define SPI_INDEX_MODE_WRITE_BLOCK_FIFO 64
 
 #define SPI_INDEX_MODE_WRITE_BLOCK_4K 0x1000
 #define SPI_INDEX_MODE_WRITE_BLOCK_BITS 12
@@ -148,12 +148,22 @@ typedef struct _SPI {
 	BYTE Reserved7[0x2C];
 
 	// 0x80
-	BYTE SPI_regx80;
-	BYTE SPI_regx81;
-	BYTE SPI_regx82;
-
-	BYTE FIFO[SPI_INDEX_MODE_READ_BLOCK_SIZE]; // Actually is 67
-
+	union {
+		struct {
+			BYTE SPI_regx80;
+			BYTE SPI_regx81;
+			BYTE SPI_regx82;
+			BYTE FIFO[SPI_INDEX_MODE_READ_BLOCK_SIZE]; // Actually is 67
+		} mode24;
+		struct {
+			BYTE SPI_regx80;
+			BYTE SPI_regx81;
+			BYTE SPI_regx82;
+			BYTE SPI_regx83;
+			BYTE FIFO[SPI_INDEX_MODE_READ_BLOCK_SIZE]; // Actually is 66
+		} mode32;
+	};
+	
 	// XXX To be extended if necessary
 
 } SPI;
@@ -172,12 +182,19 @@ typedef struct _SPIRestrictedCmd2 {
 	DWORD RestrictedCmdWoAddr2 : 8;
 } SPIRestrictedCmd2;
 
-// todo: retrieve flash region size dynamically
-#define FLASH_SIZE 16 * 1024 * 1024
+
+extern UINT32 AMD_FLASH_SIZE;
+extern UINT64 AMD_FLASH_BASE;
+
+#define AMD_DEFAULT_NEW_SPI_ADDR 0xFEC11000
+#define AMD_DEFAULT_NEW_MAPPED_FLASH_ADDRESS 0xFD00000000
+#define AMD_DEFAULT_OLD_MAPPED_FLASH_ADDRESS 0xFF000000
 
 
-void load_spi_information(DWORD spi_addr);
-void print_spi_info();
+
+void load_spi_information(DWORD spi_addr, bool new_chipset);
+void print_flash_info();
+void print_spi_ctnl_info();
 
 // SPI Controller operations
 void amd_spi_clear_fifo_ptr(volatile SPI *spi_base);
@@ -200,4 +217,5 @@ extern SPI g_spi_registers;
 
 
 #define Winbond_25Q128JVS 0xEF6018
+#define Winbond_W25Q64FW 0xef6019
 #define Winbond_25Q128JVS_SECTOR_ERASE_OP 0x20

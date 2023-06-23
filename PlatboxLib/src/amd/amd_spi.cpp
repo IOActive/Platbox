@@ -5,18 +5,32 @@
 
 DWORD g_spi_addr;
 SPI g_spi_registers;
-BOOL bSpiInformationInitialized;
+bool bSpiInformationInitialized;
+bool bNewChipset;
 DWORD g_flash_id;
 
+UINT32 AMD_FLASH_SIZE;
+UINT64 AMD_FLASH_BASE;
 
 
 BYTE SPI_READ_OP;
 BYTE SPI_WRITE_ENABLE_OP;
 BYTE SPI_WRITE_DISABLE_OP;
 BYTE SPI_WRITE_BYTE_OP;
+BYTE SPI_WRITE32_OP;
 BYTE SPI_RDID_OP;
 BYTE SPI_SECTOR_ERASE_OP; // vendor specific - not shown in the SPI Controller region
+BYTE SPI_READ_STATUS_REG1_OP;
 
+int amd_spi_check_busy(volatile SPI* spi_base) {
+    amd_spi_clear_fifo_ptr(spi_base);
+    spi_base->CmdCode = SPI_READ_STATUS_REG1_OP;
+    spi_base->RxByteCnt = 1;
+    spi_base->TxByteCnt = 0;
+    amd_spi_execute_command(spi_base);
+    char status = spi_base->mode32.SPI_regx80;
+    return status & 1;
+}
 
 void print_SPI_Cntrl0() {
     // AMD 15h Family
@@ -28,8 +42,8 @@ void print_SPI_Cntrl0() {
     1=MAC can access BIOS ROM space.
 
     SpiAccessMacRomEn. IF (Mode == SMI) Read-write. ELSE Read; Write-0-only. ENDIF. Reset: 1. 
-    This is a clear-once protection bit. 0=Software cannot access MAC’s portion of the ROM space 
-    (lower 512KB). 1=Software can access MAC’s portion of the ROM space
+    This is a clear-once protection bit. 0=Software cannot access MAC�s portion of the ROM space 
+    (lower 512KB). 1=Software can access MAC�s portion of the ROM space
     */
     DWORD spiCntrl0 = g_spi_registers.SPI_Cntrl0Value;
     int SpiAccessMacRomEn  = (spiCntrl0 >> 22) & 1;
@@ -68,7 +82,50 @@ void print_SPI_RestrictedCmds() {
         spiRestrictedCmd2->RestrictedCmdWoAddr1,
         spiRestrictedCmd2->RestrictedCmdWoAddr2);
 
-    // TODO Implement check for 01 06 C7 bytes
+    
+    // Write Status Register instruction (0x01)
+    // Write Enable (0x06)
+    // Chip Erase (0xC7)
+
+    BOOL bWriteStatusRegBlocked = false;
+    BOOL bWriteEnableBlocked     = false;
+    BOOL bChipEraseBlocked       = false;
+    
+    UINT64 restricted_ops = (*(UINT64 *)spiRestrictedCmd2 << 32) | (*(UINT64 *) spiRestrictedCmd);
+    for (int i = 0; i < 8; i++) {
+        BYTE op = (restricted_ops >> i*8) & 0xFF;
+        if (op == 0xC7) {
+            bChipEraseBlocked = true;
+        }
+        if (op == 0x06) {
+            bWriteEnableBlocked = true;
+        }
+        if (op == 0x01) {
+            bWriteStatusRegBlocked = true;
+        }
+    }
+
+    // printf("  - Write Status Register Op (0x01): ");
+    // if (bWriteStatusRegBlocked == false) {
+    //     print_red("FAILED (Not blocked)\n");
+    // } else {
+    //     print_green("OK\n");
+    // }
+
+    printf("  - Write Enable Op (0x06): ");
+    if (bWriteEnableBlocked == false) {
+        print_red("FAILED (Not blocked)\n");
+    } else {
+        print_green("OK\n");
+    }
+
+    // printf("  - Chip Erase Op (0xC7): ");
+    // if (bChipEraseBlocked == false) {
+    //     print_red("FAILED (Not blocked)\n");
+    // } else {
+    //     print_green("OK\n");
+    // }
+
 
     printf("\n");
 }
@@ -147,20 +204,38 @@ void print_SPI_x1D() {
     printf("  - AltSpiCsEn: %d\n", pAltSpiCs->AltSpiCsEn);
 }
 
-void load_spi_information(DWORD spi_addr) {
+void load_spi_information(DWORD spi_addr, bool new_chipset) {
     g_spi_addr = spi_addr;
+    bNewChipset = new_chipset;
+
     read_physical_memory(g_spi_addr, sizeof(SPI), &g_spi_registers, false);
 
-    SPI_WRITE_ENABLE_OP  = g_spi_registers.SPI_CmdValue1 & 0xFF;
+//    SPI_WRITE_ENABLE_OP  = g_spi_registers.SPI_CmdValue1 & 0xFF;
+    SPI_WRITE_ENABLE_OP  = 0x06;
     SPI_WRITE_DISABLE_OP = (g_spi_registers.SPI_CmdValue1 >> 8 ) & 0xFF;
     SPI_RDID_OP          = (g_spi_registers.SPI_CmdValue1 >> 16 ) & 0xFF;
     SPI_WRITE_BYTE_OP    = (g_spi_registers.SPI_CmdValue2 >> 24 ) & 0xFF;
     SPI_READ_OP          = g_spi_registers.SPI_CmdValue2 & 0xFF;
+    SPI_WRITE32_OP       = 0x12;
+    SPI_RDID_OP          = 0x13;
+    SPI_READ_STATUS_REG1_OP = 0x05;
     
     g_flash_id = amd_spi_read_id();
 
+    debug_print("Flash ID: %08x\n", g_flash_id);
+
+    if (bNewChipset) {
+        AMD_FLASH_SIZE = 64 * 1024 * 1024;
+        AMD_FLASH_BASE = AMD_DEFAULT_NEW_MAPPED_FLASH_ADDRESS;
+    } else {
+        AMD_FLASH_SIZE = 16 * 1024 * 1024;
+        AMD_FLASH_BASE = AMD_DEFAULT_OLD_MAPPED_FLASH_ADDRESS;
+    }
+
+    // @todo Redefine FLASH Size based on FlashID
     switch(g_flash_id) {
         case Winbond_25Q128JVS:
+        case Winbond_W25Q64FW:
             SPI_SECTOR_ERASE_OP = Winbond_25Q128JVS_SECTOR_ERASE_OP;
             break;
         default:
@@ -175,7 +250,7 @@ void load_spi_information(DWORD spi_addr) {
 }
 
 
-void print_spi_info() {
+void print_spi_ctnl_info() {
 
     if (bSpiInformationInitialized == 0) {
         printf("err: amd_spi - SPI_ADDR not set!\n");
@@ -203,24 +278,47 @@ void print_spi_info() {
 
 }
 
+void print_flash_info() {
+    /*
+    LPC_ROM_ADDRESS lpc_rom_addr_range1 = {0};
+    lpc_rom_addr_range1.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_1_StartAddress << 16;
+    lpc_rom_addr_range1.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_1_EndAddress << 16) | 0xffff;
+
+    LPC_ROM_ADDRESS lpc_rom_addr_range2 = {0};
+    lpc_rom_addr_range2.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_StartAddress << 16;
+    lpc_rom_addr_range2.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_EndAddress << 16) | 0xffff;
+
+    printf("LPC ROM Address Range1 Start: %lx\n", lpc_rom_addr_range1.StartAddr);
+    printf("LPC ROM Address Range1   End: %lx\n", lpc_rom_addr_range1.EndAddr);
+    printf("LPC ROM Address Range2 Start: %lx\n", lpc_rom_addr_range2.StartAddr);
+    printf("LPC ROM Address Range2   End: %lx\n", lpc_rom_addr_range2.EndAddr);
+    */
+    printf("Flash Base: %016lx\n", AMD_FLASH_BASE);
+    printf("Flash Size: %08x\n", AMD_FLASH_SIZE);
+}
+
 
 void amd_spi_clear_fifo_ptr(volatile SPI *spi_base) {
     // DWORD SPI_Cntrl0  = spi_base->SPI_Cntrl0Value;
 	// SPI_Cntrl0 |= 1<<20;
 	// spi_base->SPI_Cntrl0Value = SPI_Cntrl0;
-    spi_base->SPI_Cntrl0.FifoPtrClr = 1;
-    while (spi_base->SPI_Cntrl1.FifoPtr != 0);
+    if (bNewChipset == false) {
+        spi_base->SPI_Cntrl0.FifoPtrClr = 1;
+        while (spi_base->SPI_Cntrl1.FifoPtr != 0);
+    }
 }
 
 void amd_spi_execute_command(volatile SPI *spi_base) {
     spi_base->CmdTrig = 0xff;
 	while((spi_base->CmdTrig & 0x80) != 0);
 	while(spi_base->SpiStatus.SpiBusy);
+    while(spi_base->SPI_Cntrl0.SpiBusy);
 }
 
 void amd_spi_write_enable(volatile SPI* spi_base) {
     amd_spi_clear_fifo_ptr(spi_base);
-	spi_base->CmdCode = SPI_WRITE_ENABLE_OP; // WREN
+    
+    spi_base->CmdCode = SPI_WRITE_ENABLE_OP; // WREN
 	// Set RX Byte Count
 	spi_base->RxByteCnt = 0;
 	spi_base->TxByteCnt = 0;
@@ -237,15 +335,15 @@ void amd_spi_print_fifo_stats(volatile SPI *spi_base) {
 DWORD amd_spi_read_id() {
     volatile SPI *spi_base = (volatile SPI *) map_physical_memory(g_spi_addr, PAGE_SIZE);
     amd_spi_clear_fifo_ptr(spi_base);
-    spi_base->CmdCode = SPI_RDID_OP;
+    spi_base->CmdCode = 0x9F; // TODO, FIX THIS
 	// Set RX Byte Count
 	spi_base->RxByteCnt = 3;
 	spi_base->TxByteCnt = 0;
     amd_spi_execute_command(spi_base);
 
-    DWORD flash_id = (DWORD)spi_base->SPI_regx80 << 16;
-    flash_id |= (DWORD)spi_base->SPI_regx81 << 8;
-    flash_id |= (DWORD) spi_base->SPI_regx82;
+    DWORD flash_id = (DWORD)spi_base->mode24.SPI_regx80 << 16;
+    flash_id |= (DWORD)spi_base->mode24.SPI_regx81 << 8;
+    flash_id |= (DWORD) spi_base->mode24.SPI_regx82;
 
 
     unmap_physical_memory((void *) spi_base, PAGE_SIZE);
@@ -254,11 +352,13 @@ DWORD amd_spi_read_id() {
 }
 
 void amd_spi_erase_4k_block(volatile SPI *spi_base_arg, UINT32 address) {
-    if (address > FLASH_SIZE) 
+    if (address > AMD_FLASH_SIZE) 
     {
         printf("invalid parameters for read_from_flash_index_mode\n");
         return;
     }
+
+    debug_print("Erasing flash address: 0x%lx\n", address);
 
     volatile SPI *spi_base;
     
@@ -271,19 +371,35 @@ void amd_spi_erase_4k_block(volatile SPI *spi_base_arg, UINT32 address) {
     amd_spi_write_enable(spi_base);
 
     amd_spi_clear_fifo_ptr(spi_base);
+    
+    if (bNewChipset) {
+        spi_base->mode32.SPI_regx80 = (address >> 24) & 0xFF;
+        spi_base->mode32.SPI_regx81 = (address >> 16) & 0xFF;
+        spi_base->mode32.SPI_regx82 = (address >> 8) & 0xFF;
+        spi_base->mode32.SPI_regx83 = (address >> 0) & 0xFF;
 
-    // Write address to read from into FIFO
-    spi_base->SPI_Cntrl1.SpiParamters = (address >> 16) & 0xFF;
-	spi_base->SPI_Cntrl1.SpiParamters = (address >> 8) & 0xFF;
-	spi_base->SPI_Cntrl1.SpiParamters = address & 0xFF;
+        spi_base->CmdCode = SPI_SECTOR_ERASE_OP;
 
-    spi_base->CmdCode = SPI_SECTOR_ERASE_OP;
+        // Set RX Byte Count
+        spi_base->RxByteCnt = 0;
 
-	// Set RX Byte Count
-	spi_base->RxByteCnt = 0;
+        // Set Tx Byte Count
+        spi_base->TxByteCnt = 4;
+    } else {
+        // Write address to read from into FIFO
+        spi_base->SPI_Cntrl1.SpiParamters = (address >> 16) & 0xFF;
+        spi_base->SPI_Cntrl1.SpiParamters = (address >> 8) & 0xFF;
+        spi_base->SPI_Cntrl1.SpiParamters = address & 0xFF;
 
-    // Set Tx Byte Count
-	spi_base->TxByteCnt = 3;
+        spi_base->CmdCode = SPI_SECTOR_ERASE_OP;
+
+        // Set RX Byte Count
+        spi_base->RxByteCnt = 0;
+
+        // Set Tx Byte Count
+        spi_base->TxByteCnt = 3;
+    }  
+    
 
     amd_spi_execute_command(spi_base);
 
@@ -293,7 +409,7 @@ void amd_spi_erase_4k_block(volatile SPI *spi_base_arg, UINT32 address) {
 }
 
 
-void read_block_index_mode(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
+void read_block_index_mode24(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
     /*
     * Reads 64 byte block from flash
     */
@@ -316,8 +432,35 @@ void read_block_index_mode(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
 	
 	amd_spi_execute_command(spi_base);
 
-    memcpy(block, (void *) spi_base->FIFO, SPI_INDEX_MODE_READ_BLOCK_SIZE);
+    memcpy(block, (void *) &spi_base->mode24.FIFO[0], SPI_INDEX_MODE_READ_BLOCK_SIZE);
+}
 
+void read_block_index_mode32(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
+    /*
+    * Reads 64 byte block from flash
+    */
+
+    amd_spi_clear_fifo_ptr(spi_base);
+
+    // Write address to read from into SPI_Regx
+    spi_base->mode32.SPI_regx80 = (addr >> 24) & 0xFF;
+	spi_base->mode32.SPI_regx81 = (addr >> 16) & 0xFF;
+	spi_base->mode32.SPI_regx82 = (addr >> 8) & 0xFF;
+	spi_base->mode32.SPI_regx83 = (addr >> 0) & 0xFF;
+
+
+    // Set Read Opcode
+	spi_base->CmdCode = SPI_READ_OP;
+
+	// Set TX Byte Count (address is 32 bits)
+	spi_base->TxByteCnt = 4;
+
+    // Set RX for the block
+    spi_base->RxByteCnt = SPI_INDEX_MODE_READ_BLOCK_SIZE;
+	
+	amd_spi_execute_command(spi_base);
+
+    memcpy(block, (void *) &spi_base->mode32.FIFO[0], SPI_INDEX_MODE_READ_BLOCK_SIZE);
 }
 
 void read_from_flash_index_mode(volatile SPI *spi_base_arg, UINT32 start_offset, 
@@ -329,8 +472,8 @@ void read_from_flash_index_mode(volatile SPI *spi_base_arg, UINT32 start_offset,
         return;
     }
 
-    if (start_offset > FLASH_SIZE
-     || (start_offset + length) > FLASH_SIZE
+    if (start_offset > AMD_FLASH_SIZE
+     || (start_offset + length) > AMD_FLASH_SIZE
      || (start_offset + length) < start_offset
      || out_buff == NULL) 
     {
@@ -359,13 +502,17 @@ void read_from_flash_index_mode(volatile SPI *spi_base_arg, UINT32 start_offset,
     // Remaining length
     UINT32 rlength = length;
 
-    //printf("Processing %d blocks\n", num_blocks);
+    //debug_print("Processing %d blocks\n", num_blocks);
     for (int i = 0 ; i < num_blocks; i++) {
         UINT32 addr = aligned_addr + i * SPI_INDEX_MODE_READ_BLOCK_SIZE;
         //memset(block, 0x00, SPI_INDEX_MODE_READ_BLOCK_SIZE);
-        read_block_index_mode(spi_base, addr, block);
+        if (bNewChipset) {
+            read_block_index_mode32(spi_base, addr, block);
+        } else {
+            read_block_index_mode24(spi_base, addr, block);
+        }
         
-        printf("reading block:[%d] - addr: %08x\n", i, addr);
+        debug_print("reading block:[%d] - addr: %08x\n", i, addr);
 
         // Handle first block
         if (i == 0) {
@@ -399,27 +546,26 @@ void read_from_flash_index_mode(volatile SPI *spi_base_arg, UINT32 start_offset,
 
 void amd_dump_spi_flash_index_mode(const char *output_filename) {
 
-    char *rom_data  = (char *) calloc(1, FLASH_SIZE);
-    read_from_flash_index_mode(NULL, 0, FLASH_SIZE, (BYTE *) rom_data);
+    char *rom_data  = (char *) calloc(1, AMD_FLASH_SIZE);
+    read_from_flash_index_mode(NULL, 0, AMD_FLASH_SIZE, (BYTE *) rom_data);
 
     FILE *f = fopen(output_filename, "wb");
-    fwrite(rom_data, FLASH_SIZE, 1, f);
+    fwrite(rom_data, AMD_FLASH_SIZE, 1, f);
     fclose(f);
 
     free(rom_data);
 }
 
 
-void write_block_index_mode(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
+void write_block_index_mode24(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
     /*
     * Writes a 8 byte block into flash
     */
 
-    #ifdef __linux__
-		usleep(200);
-    #else
-        Sleep(200);
-    #endif
+    //doSleep(200);
+    while(amd_spi_check_busy(spi_base)) {
+        doSleep(1);
+    }
 
     amd_spi_write_enable(spi_base);
 
@@ -446,7 +592,46 @@ void write_block_index_mode(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
 	
 	amd_spi_execute_command(spi_base);
 
-    printf("Writing 8 bytes into address: %08x\n", addr);
+    debug_print("Writing %d bytes into address: %08x\n", SPI_INDEX_MODE_WRITE_BLOCK_FIFO, addr);
+    
+}
+
+void write_block_index_mode32(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
+    /*
+    * Writes a 8 byte block into flash
+    */
+
+    //doSleep(125);
+    while(amd_spi_check_busy(spi_base)) {
+        doSleep(1);
+    }
+
+    amd_spi_write_enable(spi_base);
+
+    amd_spi_clear_fifo_ptr(spi_base);
+
+    // Write address to read from into FIFO
+    spi_base->mode32.SPI_regx80 = (addr >> 24) & 0xFF;
+	spi_base->mode32.SPI_regx81 = (addr >> 16) & 0xFF;
+	spi_base->mode32.SPI_regx82 = (addr >> 8) & 0xFF;
+	spi_base->mode32.SPI_regx83 = (addr >> 0) & 0xFF;
+
+    for (int i = 0; i < SPI_INDEX_MODE_WRITE_BLOCK_FIFO; i++) {
+        spi_base->mode32.FIFO[i] = block[i];
+    }
+
+    // Set Write Opcode
+	spi_base->CmdCode = SPI_WRITE32_OP;
+
+	// Set TX Byte Count (address is 32 bits)
+	spi_base->TxByteCnt = 4 + SPI_INDEX_MODE_WRITE_BLOCK_FIFO;
+
+    // Set RX for the block
+    spi_base->RxByteCnt = 0;
+	
+	amd_spi_execute_command(spi_base);
+
+    debug_print("Writing %d bytes into address: %08x\n", SPI_INDEX_MODE_WRITE_BLOCK_FIFO, addr);
     
 }
 
@@ -457,7 +642,19 @@ void write_4k_block(volatile SPI *spi_base, UINT32 addr, BYTE *block) {
     UINT32 iterations = SPI_INDEX_MODE_WRITE_BLOCK_4K / SPI_INDEX_MODE_WRITE_BLOCK_FIFO;
     for (int i = 0; i < iterations; i++) {
         UINT32 cur_addr = addr + i * SPI_INDEX_MODE_WRITE_BLOCK_FIFO;
-        write_block_index_mode(spi_base, cur_addr, &block[i * SPI_INDEX_MODE_WRITE_BLOCK_FIFO]);
+        if (bNewChipset) {
+            write_block_index_mode32(
+                spi_base,
+                cur_addr,
+                &block[i * SPI_INDEX_MODE_WRITE_BLOCK_FIFO]
+            );
+        } else {
+            write_block_index_mode24(
+                spi_base,
+                cur_addr,
+                &block[i * SPI_INDEX_MODE_WRITE_BLOCK_FIFO]
+            );
+        }
     }
 }
 
@@ -468,8 +665,8 @@ void amd_spi_write_buffer(volatile SPI *spi_base_arg, UINT32 flash_address, BYTE
         return;
     }
 
-    if (flash_address > FLASH_SIZE
-     || (flash_address + in_length) > FLASH_SIZE
+    if (flash_address > AMD_FLASH_SIZE
+     || (flash_address + in_length) > AMD_FLASH_SIZE
      || (flash_address + in_length) < flash_address
      || in_buff == NULL) 
     {
@@ -522,8 +719,6 @@ void amd_spi_write_buffer(volatile SPI *spi_base_arg, UINT32 flash_address, BYTE
         else if (i == num_blocks - 1) {  
             memcpy(block, pBuff, rlength);
             pBuff += rlength;
-            continue;
-
         } 
         // Handle middle blocks
         else { 

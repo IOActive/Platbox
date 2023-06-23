@@ -1,4 +1,5 @@
 #include "smi_fuzz.h"
+#include "smi.h"
 
 void print_smi_call(SW_SMI_CALL *smi) {
 	printf("SwSmiNumber: %02x\n", smi->SwSmiNumber);
@@ -55,21 +56,8 @@ void fuzz_smi_number(int sw_smi_num) {
 		//printf("\r--> iteration: %d", j);
 		print_smi_call(&smi_call);
 
-		#ifdef __linux__
-			int status = ioctl(g_hDevice, IOCTL_ISSUE_SW_SMI, &smi_call);			
-		#else //_WIN32
-			NTSTATUS status;
-			status = DeviceIoControl(
-                g_hDevice,
-                IOCTL_ISSUE_SW_SMI,
-                &smi_call,
-                sizeof(SW_SMI_CALL),
-                NULL,
-                0,
-                &bytesReturned,
-                NULL);
-		
-		#endif		
+		trigger_smi(&smi_call);
+
 		j++;
 	}	
 }
@@ -124,22 +112,7 @@ void fuzz_all_smi() {
 			smi_call.SwSmiData = g_fuzzer->get_random(g_fuzzer) % 256;
 			printf("\r--> iteration: %d", j);
 
-			#ifdef __linux__ 
-				int status = ioctl(g_hDevice, IOCTL_ISSUE_SW_SMI, &smi_call);
-			#elif _WIN32				
-				NTSTATUS status;
-				status = DeviceIoControl(
-                    g_hDevice,
-                    IOCTL_ISSUE_SW_SMI,
-                    &smi_call,
-                    sizeof(SW_SMI_CALL),
-                    NULL,
-                    0,
-                    &bytesReturned,
-                    NULL);	
-
-			#else
-			#endif
+			trigger_smi(&smi_call);
 			
 		}
 	}

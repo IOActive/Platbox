@@ -1,6 +1,7 @@
 #pragma once
 #include "types.h"
 #include "amd_spi.h"
+#include "amd_acpi.h"
 
 void amd_retrieve_chipset_information();
 void amd_print_chipset_information();
@@ -303,6 +304,36 @@ enum AMD_MSRS {
 	DRAM. This value is normally placed below 4G. From TOM to 4G is MMIO; below TOM is DRAM.
 	*/
 	AMD_MSR_TOP_OF_MEMORY  = 0xC001001A,
+
+
+	/*
+	MSR C001_0010 System Configuration (SYS_CFG)
+
+	Bits Description
+	63:23 Reserved.
+	22 Tom2ForceMemTypeWB: top of memory 2 memory type write back. Read-write. Reset: 0. 
+	1=The default memory type of memory between 4GB and TOM2 is write back instead of the memory 
+	type defined by MSR0000_02FF[MemType]. For this bit to have any effect, 
+	MSR0000_02FF[MtrrDefTypeEn] must be 1. MTRRs and PAT can be used to override this memory 
+	type.
+	21 MtrrTom2En: MTRR top of memory 2 enable. Read-write. Reset: 0. 0=MSRC001_001D [Top Of 
+	Memory 2 (TOM2)] is disabled. 1=This register is enabled. See D0F0x64_x19[TomEn].
+	20 MtrrVarDramEn: MTRR variable DRAM enable. Read-write. Reset: 0. BIOS: 1. 
+	0=MSRC001_001A [Top Of Memory (TOP_MEM)] and IORRs are disabled. 1=These registers are 
+	enabled.
+	19 MtrrFixDramModEn: MTRR fixed RdDram and WrDram modification enable. Read-write. 
+	Reset: 0. Controls access to MSR0000_02[6F:68,59:58,50][RdDram, WrDram]. 0=Access type is 
+	MBZ; writing 00b does not change the hidden value of MSR0000_02[6F:68,59:58,50][RdDram, 
+	WrDram]. 1=Access type is Read-write. BIOS: This bit should be set to 1 during BIOS initialization 
+	of the fixed MTRRs, then cleared to 0 for operation. 
+	18 MtrrFixDramEn: MTRR fixed RdDram and WrDram attributes enable. Read-write. Reset: 0. 
+	BIOS: 1. 1=Enables the RdDram and WrDram attributes in MSR0000_02[6F:68,59:58,50].
+	17 SysUcLockEn: system lock command enable. Read-write. Reset: 1. 0=Coherent fabric does not 
+	support bus lock transactions. This bit must be set on multi-core processors. 
+	16 Reserved.
+	15:0 Reserved.
+	*/
+	AMD_MSR_SYS_CFG = 0xC0010010,
 
 };
 

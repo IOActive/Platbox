@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.13)
 # Maps to Visual Studio solution file (Tutorial.sln)
 # The solution will have all targets (exe, lib, dll) 
 # as Visual Studio projects (.vcproj)
-project (example)
+project (pocs)
 
 include_directories (
     "${PROJECT_SOURCE_DIR}/../PlatboxLib/inc"
@@ -29,12 +29,22 @@ SET (PROJECT_ROOT "${PROJECT_SOURCE_DIR}")
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
-set (PROJECT_SOURCES 
-    poc.cpp
-)
+# POC executables
 
-# main executable
-add_executable(example  "${PROJECT_SOURCES}")
 
-# link lib
-target_link_libraries (example  platbox_lib)
+
+add_executable(AcerSpiAccessViaSmiPoc Acer/SpiAccessViaSmi.cpp)
+add_executable(AcerSmmCalloutPoc Acer/SmmCallout.cpp)
+
+
+add_executable(SecureCoreAcer SecureCoreAcer/DirectSpiAccess.cpp)
+
+# Link libraries
+
+
+
+
+target_link_libraries(AcerSpiAccessViaSmiPoc platbox_lib)
+target_link_libraries(AcerSmmCalloutPoc platbox_lib)
+
+target_link_libraries(SecureCoreAcer platbox_lib)

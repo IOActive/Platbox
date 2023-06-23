@@ -554,7 +554,7 @@ void print_efi_memory_map() {
 		DeviceIoControl(g_hDevice, IOCTL_WRITE_KMEM,
 			 &kmem_write, sizeof(kmem_write), NULL, 0, &dwBytesReturned, NULL);
 		// Tlb Refresh via Sleep
-		Sleep(200);
+		doSleep(200);
 
 		//print_memory(0x00, (char *) 0, 0x200);
 
@@ -595,7 +595,7 @@ void print_efi_memory_map() {
 		DeviceIoControl(g_hDevice, IOCTL_WRITE_KMEM,
 			 &kmem_write, sizeof(kmem_write), NULL, 0, &dwBytesReturned, NULL);
 		// Tlb Refresh via Sleep
-		Sleep(200);
+		doSleep(200);
 
 		free(pte_array_values);
 

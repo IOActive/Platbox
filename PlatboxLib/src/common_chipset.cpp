@@ -95,3 +95,16 @@ void get_tseg_region(UINT64 *base, UINT32 *size) {
             break;
     }
 }
+
+UINT16 get_smi_trigger_port() {
+    switch(get_processor_type()) {
+        case _INTEL_PROCESSOR:
+            return INTEL_SMI_TRIGGER_PORT;
+            break;
+        case _AMD_PROCESSOR:
+            return get_amd_smi_trigger_port();
+            break;
+    }
+
+    return 0;
+}

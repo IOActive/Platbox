@@ -19,6 +19,7 @@ if (WIN32)
     set (PROJECT_SOURCES 
         src/msr.cpp
         src/pci.cpp
+        src/io.cpp
         src/physmem.cpp
         src/UEFIVars.cpp
         src/global.cpp
@@ -34,8 +35,11 @@ if (WIN32)
         
         src/amd/amd_chipset.cpp
         src/amd/amd_spi.cpp
+        src/amd/amd_acpi.cpp
+        src/amd/amd_psp.cpp
         
         src/smm/smm_communicate.cpp
+        src/smm/smi.cpp
         src/smm/smi_fuzz.cpp
     )
 endif (WIN32)
@@ -48,6 +52,7 @@ if (UNIX)
     set (PROJECT_SOURCES 
         src/msr.cpp
         src/pci.cpp
+        src/io.cpp
         src/physmem.cpp
         src/UEFIVars.cpp
         src/global.cpp
@@ -59,8 +64,11 @@ if (UNIX)
         
         src/amd/amd_chipset.cpp
         src/amd/amd_spi.cpp
+        src/amd/amd_acpi.cpp
+        src/amd/amd_psp.cpp
         
         src/smm/smm_communicate.cpp
+        src/smm/smi.cpp
         src/smm/smi_fuzz.cpp
     )
 endif (UNIX)

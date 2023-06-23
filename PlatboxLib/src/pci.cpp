@@ -288,7 +288,7 @@ void write_pci_word(UINT8 bus, UINT8 device, UINT8 function, UINT offset, UINT v
 			status = -1;	
 			status = ioctl(g_hDevice, IOCTL_WRITE_PCI_WORD, &pci_call);		
 			if (status == 0) {
-				debug_print("-> One byte written into %02x:%02x:%02x offset %08xh: %02xh\n",
+				debug_print("-> One word written into %02x:%02x:%02x offset %08xh: %02xh\n",
 					bus, device, function, offset, value);
 			}
 		#elif _WIN32
@@ -338,7 +338,7 @@ void write_pci_dword(UINT8 bus, UINT8 device, UINT8 function, UINT offset, UINT 
 			status = -1;	
 			status = ioctl(g_hDevice, IOCTL_WRITE_PCI_DWORD, &pci_call);		
 			if (status == 0) {
-				debug_print("-> One byte written into %02x:%02x:%02x offset %08xh: %02xh\n",
+				debug_print("-> One dword written into %02x:%02x:%02x offset %08xh: %02xh\n",
 					bus, device, function, offset, value);
 			}
 		#elif _WIN32

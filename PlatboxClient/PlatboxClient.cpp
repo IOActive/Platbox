@@ -100,6 +100,28 @@ void parse_bus_device_function(char *line, UINT *bus, UINT *device, UINT *functi
 	free(subargs);
 }
 
+
+void read_msr(int argc, char **argv) {
+	/* rdmsr <msr> */
+	if (argc == 2) {		
+		UINT msr = strtoul(argv[1], NULL, 16);
+		enable_debug_mode();
+		do_read_msr(msr, NULL);
+		restore_debug_mode();
+	}
+}
+
+void write_msr(int argc, char **argv) {
+	/* wrmsr <msr> <value> */
+	if (argc == 3) {	
+		UINT msr = strtoul(argv[1], NULL, 16);
+		UINT64 value = strtoull(argv[2], NULL, 16);
+		enable_debug_mode();
+		do_write_msr(msr, value);
+		restore_debug_mode();
+	}
+}
+
 void parse_handle_pci_operation(int argc, char **argv) {
 	// pci r 0:2:0 -> reads the configuration space
 	// pci rb 0:2:0 1 -> reads a byte from offset 

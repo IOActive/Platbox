@@ -1,7 +1,6 @@
 #include "global.h"
 
 HANDLE g_hDevice = 0;
-
 int DEBUG_MODE = 0;
 
 void debug_print(const char *fmt, ...) {
@@ -179,9 +178,9 @@ char service_exe[512];
 void install_driver(char *driverNameArg) {
 	memset(service_exe, 0x00, sizeof(service_exe));
 
-	#ifdef __linux__ 
-		printf("install_driver Unimplemented!");
-		exit(-1);
+	#ifdef __linux__ 		
+		system("insmod kernetix_km.ko");
+		//exit(-1);
 
 	#else // _WIN32
 
@@ -281,8 +280,7 @@ void stop_service() {
 
 void remove_driver() {
 	#ifdef __linux__ 
-		printf("remove_driver Unimplemented!");
-		exit(-1);
+		system("rmmod kernetix_km");
 
 	#else // _WIN32
 		SC_HANDLE hSCM = OpenSCManager(NULL, NULL, SC_MANAGER_CREATE_SERVICE);
@@ -345,5 +343,13 @@ void init_os_specifics() {
 
 		resolve_nt_functions();
 		find_pml4_idx();
+	#endif
+}
+
+void doSleep(UINT64 milliseconds) {
+	#ifdef _WIN32
+		Sleep(milliseconds);
+	#else
+		usleep(milliseconds * 1000); // convert to ms to us
 	#endif
 }

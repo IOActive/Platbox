@@ -1,5 +1,6 @@
 
 #include "smm_communicate.h"
+#include "smi.h"
 #include "intel_chipset.h"
 #include "pci.h"
 #include "physmem.h"
@@ -137,15 +138,7 @@ void __smm_dump_s3_bootscript(void *ptr_smm_core_private, const char *output_fil
 
     //getchar();
 
-    #ifdef __linux__
-		status = ioctl(g_hDevice, IOCTL_ISSUE_SW_SMI, &smi_call);			
-    #else //_WIN32        
-        DWORD bytesReturned = 0;
-        status = DeviceIoControl(g_hDevice, IOCTL_ISSUE_SW_SMI, &smi_call, sizeof(SW_SMI_CALL), NULL, 0, &bytesReturned, NULL);
-
-        //printf("SMI Sent!\n");
-    
-    #endif		
+    trigger_smi(&smi_call);	
 
     //debug_print("Memory After the SMI:\n");
     //print_memory(0, (char *) user_page.va, 0x200);

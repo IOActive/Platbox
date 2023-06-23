@@ -7,7 +7,7 @@ Signature="$WINDOWS NT$"
 Class=System
 ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider=%ManufacturerName%
-DriverVer = 02/27/2023,14.20.16.161
+DriverVer = 03/12/2023,22.8.38.509
 CatalogFile=Platbox.cat
 PnpLockdown=1
 

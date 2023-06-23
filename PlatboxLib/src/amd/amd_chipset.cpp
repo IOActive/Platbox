@@ -5,9 +5,12 @@
 #include "Util.h"
 #include "physmem.h"
 #include "msr.h"
+#include "amd_psp.h"
 
 LPC_ISA_Bridge g_lpc_isa_bridge_registers;
 DWORD64 g_MmioCfgBaseAddr;
+bool _isNewAmdChipset;
+
 
 
 void _read_lpc_isa_bridge() {	
@@ -276,12 +279,7 @@ void amd_print_root_complex_nb_control() {
 
     int HwInitWrLock = (nb_control >> 7) & 1;
 
-    printf("D0F0x64_x00 Northbridge Control.HwInitWrLock: %d - ", HwInitWrLock);
-    if (HwInitWrLock == 0) {
-        print_red("FAILED\n");
-    } else {
-        print_green("OK\n");
-    }
+    printf("D0F0x64_x00 Northbridge Control.HwInitWrLock: %d", HwInitWrLock);
 
     printf("\n");
 }
@@ -392,6 +390,22 @@ void amd_print_dram_range_base_limit() {
         printf("     => LimitLow : %08x\n", limit_low);
         printf("       => DstNode : %d\n", limit_low & 0b111);            
     }
+}
+
+void amd_print_syscfg() {
+    
+    DWORD64 syscfg = 0;
+    do_read_msr(AMD_MSR_SYS_CFG, &syscfg);
+
+    printf("MSR C001_0010 System Configuration (SYS_CFG)\n");
+	printf(" => Value: %016llx\n", syscfg);
+    printf("   -> Tom2ForceMemTypeWB: %d\n", (syscfg >> 22) & 1);
+    printf("   -> MtrrTom2En: %d\n", (syscfg >> 21) & 1);
+    printf("   -> MtrrVarDramEn: %d\n", (syscfg >> 20) & 1);
+    printf("   -> MtrrFixDramModEn: %d\n", (syscfg >> 19) & 1);
+    printf("   -> MtrrFixDramEn: %d\n", (syscfg >> 18) & 1);
+    printf("   -> SysUcLockEn: %d\n", (syscfg >> 17) & 1);
+    printf("\n");
 }
 
 
@@ -530,9 +544,23 @@ void amd_print_memory_controller_configuration_lock() {
 
 void amd_retrieve_chipset_information() {
     _read_lpc_isa_bridge();
+    
+    DWORD spi_addr = (*(DWORD *) &g_lpc_isa_bridge_registers.SPI_BASE);
+    if (spi_addr == 0xFFFFFFFF) { // If this happens it means the whole LPC ISA Bridge is mostly 0xFF
+        spi_addr = AMD_DEFAULT_NEW_SPI_ADDR;
+        _isNewAmdChipset = true;
+    } else {
+        spi_addr = spi_addr & 0xFFFFFFC0;
+        _isNewAmdChipset = false;
+    }
+
+    load_spi_information(spi_addr, _isNewAmdChipset);
+
     _read_mmio_cfg_base_addr();
-    DWORD spi_addr = (*(DWORD *) &g_lpc_isa_bridge_registers.SPI_BASE) & 0xFFFFFFC0;
-    load_spi_information(spi_addr);
+}
+
+bool isNewAmdChipset() {
+    return _isNewAmdChipset;
 }
 
 
@@ -541,126 +569,122 @@ void amd_print_chipset_information() {
 
     amd_retrieve_chipset_information();
 
-    IO_MEM_PORT_DECODE *pIOMemPortDecodeEnable =  (IO_MEM_PORT_DECODE *) &g_lpc_isa_bridge_registers.IOMemPortDecodeEnableRegister;
-    printf("IO/Mem Port Decode\n");
-    printf("  - SUPER_IO_CONFIGURATION_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->SUPER_IO_CONFIGURATION_PORT_ENABLE);
-    printf("  - ALTERNATE_SUPER_IO_CONFIGURATION_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ALTERNATE_SUPER_IO_CONFIGURATION_PORT_ENABLE);
-    printf("  - WIDE_GENERIC_IO_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_GENERIC_IO_PORT_ENABLE);
-    printf("  - ROM_RANGE_1_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ROM_RANGE_1_PORT_ENABLE);
-    printf("  - ROM_RANGE_2_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ROM_RANGE_2_PORT_ENABLE);
-    printf("  - MEMORY_RANGE_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->MEMORY_RANGE_PORT_ENABLE);
-    printf("  - RCT_IO_RANGE_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->RCT_IO_RANGE_PORT_ENABLE);
-    printf("  - SYNC_TIMEOUT_COUNTER_ENABLE: %d\n", pIOMemPortDecodeEnable->SYNC_TIMEOUT_COUNTER_ENABLE);
-    printf("  - SYNC_TIMEOUT: %d\n", pIOMemPortDecodeEnable->SYNC_TIMEOUT);
-    printf("  - IO_PORT_ENABLE_0: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_0);
-    printf("  - IO_PORT_ENABLE_1: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_1);
-    printf("  - IO_PORT_ENABLE_2: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_2);
-    printf("  - IO_PORT_ENABLE_3: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_3);
-    printf("  - MEM_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->MEM_PORT_ENABLE);
-    printf("  - IO_PORT_ENABLE_4: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_4);
-    printf("  - IO_PORT_ENABLE_5: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_5);
-    printf("  - IO_PORT_ENABLE_6: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_6);
-    printf("  - WIDE_IO1_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_IO1_ENABLE);
-    printf("  - WIDE_IO2_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_IO2_ENABLE);
-    printf("\n");
+    // IO_MEM_PORT_DECODE *pIOMemPortDecodeEnable =  (IO_MEM_PORT_DECODE *) &g_lpc_isa_bridge_registers.IOMemPortDecodeEnableRegister;
+    // printf("IO/Mem Port Decode\n");
+    // printf("  - SUPER_IO_CONFIGURATION_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->SUPER_IO_CONFIGURATION_PORT_ENABLE);
+    // printf("  - ALTERNATE_SUPER_IO_CONFIGURATION_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ALTERNATE_SUPER_IO_CONFIGURATION_PORT_ENABLE);
+    // printf("  - WIDE_GENERIC_IO_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_GENERIC_IO_PORT_ENABLE);
+    // printf("  - ROM_RANGE_1_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ROM_RANGE_1_PORT_ENABLE);
+    // printf("  - ROM_RANGE_2_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->ROM_RANGE_2_PORT_ENABLE);
+    // printf("  - MEMORY_RANGE_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->MEMORY_RANGE_PORT_ENABLE);
+    // printf("  - RCT_IO_RANGE_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->RCT_IO_RANGE_PORT_ENABLE);
+    // printf("  - SYNC_TIMEOUT_COUNTER_ENABLE: %d\n", pIOMemPortDecodeEnable->SYNC_TIMEOUT_COUNTER_ENABLE);
+    // printf("  - SYNC_TIMEOUT: %d\n", pIOMemPortDecodeEnable->SYNC_TIMEOUT);
+    // printf("  - IO_PORT_ENABLE_0: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_0);
+    // printf("  - IO_PORT_ENABLE_1: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_1);
+    // printf("  - IO_PORT_ENABLE_2: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_2);
+    // printf("  - IO_PORT_ENABLE_3: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_3);
+    // printf("  - MEM_PORT_ENABLE: %d\n", pIOMemPortDecodeEnable->MEM_PORT_ENABLE);
+    // printf("  - IO_PORT_ENABLE_4: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_4);
+    // printf("  - IO_PORT_ENABLE_5: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_5);
+    // printf("  - IO_PORT_ENABLE_6: %d\n", pIOMemPortDecodeEnable->IO_PORT_ENABLE_6);
+    // printf("  - WIDE_IO1_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_IO1_ENABLE);
+    // printf("  - WIDE_IO2_ENABLE: %d\n", pIOMemPortDecodeEnable->WIDE_IO2_ENABLE);
+    // printf("\n");
 
-    printf("MemoryRange: %lx\n", g_lpc_isa_bridge_registers.MemoryRangeRegister);
-    printf("\n");
+    if (isNewAmdChipset() == false) {
 
-    printf("\n=== SPI Range Protections ===\n");
-    ROM_PROTECT *pRomProtect;
-    pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect0;
-    printf("Rom Protect 0: %08x\n", *(DWORD *)pRomProtect);
-    printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
-    printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
-    printf("  - Range: %08x\n", pRomProtect->Range);
-    printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
-    printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
-    printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
-    printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
-    printf("  - STATUS: ");
-    if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
-        print_red("Warning - Unused ROM Range Protection\n");
-    } else {
-        print_green("OK - Range in use\n");
+        printf("MemoryRange: %lx\n", g_lpc_isa_bridge_registers.MemoryRangeRegister);
+        printf("\n");
+
+        printf("\n=== SPI Range Protections ===\n");
+        ROM_PROTECT *pRomProtect;
+        pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect0;
+        printf("Rom Protect 0: %08x\n", *(DWORD *)pRomProtect);
+        printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
+        printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
+        printf("  - Range: %08x\n", pRomProtect->Range);
+        printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
+        printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
+        printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
+        printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
+        printf("  - STATUS: ");
+        if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
+            print_red("Warning - Unused ROM Range Protection\n");
+        } else {
+            print_green("OK - Range in use\n");
+        }
+        pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect1;
+        printf("Rom Protect 1: %08x\n", *(DWORD *)pRomProtect);
+        printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
+        printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
+        printf("  - Range: %08x\n", pRomProtect->Range);
+        printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
+        printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
+        printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
+        printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
+        printf("  - STATUS: ");
+        if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
+            print_red("Warning - Unused ROM Range Protection\n");
+        } else {
+            print_green("OK - Range in use\n");
+        }
+
+        pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect2;
+        printf("Rom Protect 2: %08x\n", *(DWORD *)pRomProtect);
+        printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
+        printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
+        printf("  - Range: %08x\n", pRomProtect->Range);
+        printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
+        printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
+        printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
+        printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
+        printf("  - STATUS: ");
+        if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
+            print_red("Warning - Unused ROM Range Protection\n");
+        } else {
+            print_green("OK - Range in use\n");
+        }
+
+        pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect3;
+        printf("Rom Protect 3: %08x\n", *(DWORD *)pRomProtect);
+        printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
+        printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
+        printf("  - Range: %08x\n", pRomProtect->Range);
+        printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
+        printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
+        printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
+        printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
+        printf("  - STATUS: ");
+        if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
+            print_red("Warning - Unused ROM Range Protection\n");
+        } else {
+            print_green("OK - Range in use\n");
+        }
+
+        printf("\n");
+
+        MISC_CTL_BITS* pMiscCtlBits = (MISC_CTL_BITS *) &g_lpc_isa_bridge_registers.MiscCtlBits;
+        printf("SPI ROM SMM Write Enable: %d\n", pMiscCtlBits->SmmWriteRomEn);
     }
-    pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect1;
-    printf("Rom Protect 1: %08x\n", *(DWORD *)pRomProtect);
-    printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
-    printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
-    printf("  - Range: %08x\n", pRomProtect->Range);
-    printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
-    printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
-    printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
-    printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
-    printf("  - STATUS: ");
-    if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
-        print_red("Warning - Unused ROM Range Protection\n");
-    } else {
-        print_green("OK - Range in use\n");
-    }
-
-    pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect2;
-    printf("Rom Protect 2: %08x\n", *(DWORD *)pRomProtect);
-    printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
-    printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
-    printf("  - Range: %08x\n", pRomProtect->Range);
-    printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
-    printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
-    printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
-    printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
-    printf("  - STATUS: ");
-    if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
-        print_red("Warning - Unused ROM Range Protection\n");
-    } else {
-        print_green("OK - Range in use\n");
-    }
-
-    pRomProtect = (ROM_PROTECT *) & g_lpc_isa_bridge_registers.ROMProtect3;
-    printf("Rom Protect 3: %08x\n", *(DWORD *)pRomProtect);
-    printf("  - Base: %08x\n", pRomProtect->RomBase << 11);
-    printf("  - RangeUnit: %d\n", pRomProtect->RangeUnit);
-    printf("  - Range: %08x\n", pRomProtect->Range);
-    printf("  - Protected size: %08x\n", pRomProtect->RangeUnit ? pRomProtect->Range << 16 : pRomProtect->Range << 12);
-    printf("  - WriteProtected: %d\n", pRomProtect->WriteProtect);
-    printf("  - ReadProtected: %d\n", pRomProtect->ReadProtect);
-    printf("  - Total range [%08x, %08x]\n", pRomProtect->RomBase << 11, (pRomProtect->RomBase << 11) + (pRomProtect->RangeUnit ? (pRomProtect->Range + 1) << 16 : (pRomProtect->Range + 1) << 12) - 1);
-    printf("  - STATUS: ");
-    if (pRomProtect->RomBase == 0 && pRomProtect->Range == 0) {
-        print_red("Warning - Unused ROM Range Protection\n");
-    } else {
-        print_green("OK - Range in use\n");
-    }
-
-    printf("\n");
-
-    MISC_CTL_BITS* pMiscCtlBits = (MISC_CTL_BITS *) &g_lpc_isa_bridge_registers.MiscCtlBits;
-    printf("SPI ROM SMM Write Enable: %d\n", pMiscCtlBits->SmmWriteRomEn);
 
     printf("\n");
     
-    print_spi_info();
+    print_spi_ctnl_info();
+    printf("\n");
+    print_flash_info();
     
-    LPC_ROM_ADDRESS lpc_rom_addr_range1 = {0};
-    lpc_rom_addr_range1.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_1_StartAddress << 16;
-    lpc_rom_addr_range1.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_1_EndAddress << 16) | 0xffff;
-
-    LPC_ROM_ADDRESS lpc_rom_addr_range2 = {0};
-    lpc_rom_addr_range2.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_StartAddress << 16;
-    lpc_rom_addr_range2.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_EndAddress << 16) | 0xffff;
-
-    printf("LPC ROM Address Range1 Start: %lx\n", lpc_rom_addr_range1.StartAddr);
-    printf("LPC ROM Address Range1   End: %lx\n", lpc_rom_addr_range1.EndAddr);
-    printf("LPC ROM Address Range2 Start: %lx\n", lpc_rom_addr_range2.StartAddr);
-    printf("LPC ROM Address Range2   End: %lx\n", lpc_rom_addr_range2.EndAddr);
     printf("\n");
 
     amd_print_smm_base();
     amd_print_smm_tseg_addr();
     amd_print_smm_tseg_mask();
     amd_print_hwcr_smmlock();
+
+    amd_print_syscfg();
     //amd_print_smi_on_io_trap_configuration();
     amd_print_io_trap_control_status();
+
     amd_print_apic_bar();
     amd_print_mmio_ba();
 
@@ -671,29 +695,36 @@ void amd_print_chipset_information() {
     amd_print_msr_tom2();
     amd_print_root_complex_tom();
     amd_print_msr_tom();
-    amd_print_dram_range_base_limit();
-    amd_print_mmio_base_limit_ranges();
-    amd_print_dram_system_address_range();
-    amd_print_dram_controller_range();
-    amd_print_dram_hole();
-    amd_print_memory_controller_configuration_lock();
+    //amd_print_dram_range_base_limit();
+    //amd_print_mmio_base_limit_ranges();
+    //amd_print_dram_system_address_range();
+    //amd_print_dram_controller_range();
+    //amd_print_dram_hole();
+    //amd_print_memory_controller_configuration_lock();
+
+    print_psp_security_configuration();
 }
 
 
 void amd_dump_spi_flash(const char *output_filename) {
-    _read_lpc_isa_bridge();
+    amd_retrieve_chipset_information();
 
-    LPC_ROM_ADDRESS lpc_rom_addr_range2 = {0};
-    lpc_rom_addr_range2.StartAddr = (DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_StartAddress << 16;
-    lpc_rom_addr_range2.EndAddr = ((DWORD)g_lpc_isa_bridge_registers.LPC_ROM_Address_Range_2_EndAddress << 16) | 0xffff;
+    UINT64 flash_base = AMD_FLASH_BASE;
+    UINT32 flash_size = AMD_FLASH_SIZE;
 
-    size_t rom_size = lpc_rom_addr_range2.EndAddr - lpc_rom_addr_range2.StartAddr + 1;
-    char *rom_data  = (char *) calloc(1, rom_size);
-    
-    debug_print(" -> About to read %08x bytes from %016llx pa\n", rom_size, lpc_rom_addr_range2.StartAddr);
-    read_physical_memory_into_file(lpc_rom_addr_range2.StartAddr, rom_size, output_filename );
-    
-    free(rom_data);
+    void * mem = calloc(1, flash_size);
+
+    for (int i = 0 ; i < flash_size ;  i += PAGE_SIZE) {
+        void *p = map_physical_memory(flash_base + i, PAGE_SIZE);
+        //printf("%lx\n", flash_base+i);
+        memcpy((unsigned char *) mem + i, p,PAGE_SIZE);
+        unmap_physical_memory(p, PAGE_SIZE);
+    }
+
+    FILE *fp  = fopen(output_filename, "wb");
+    fwrite(mem, flash_size, 1, fp);
+    fclose(fp);
+    free(mem);
 }
 
 

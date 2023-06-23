@@ -205,6 +205,12 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 		case IOCTL_WRITE_MSR:
 			Status = WriteMSR(Irp, IrpSp);
 			break;
+		case IOCTL_READ_IO_PORT:
+			Status = ReadIOPort(Irp, IrpSp);
+			break;
+		case IOCTL_WRITE_IO_PORT:
+			Status = WriteIOPort(Irp, IrpSp);
+			break;
 		case IOCTL_PATCH_CALLBACK:
 			Status = PatchCallback(Irp, IrpSp);
 			break;
@@ -259,11 +265,9 @@ NTSTATUS SendSWSmiHandler(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	PAGED_CODE();
 
 	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength == sizeof(SW_SMI_CALL)) {
-		PSW_SMI_CALL s = (PSW_SMI_CALL) Irp->AssociatedIrp.SystemBuffer;
-		UINT16 b2b3 = ((s->SwSmiData << 8) | s->SwSmiNumber);
 		__try
 		{
-			_swsmi(b2b3, s->rax, s->rbx, s->rcx, s->rdx, s->rsi, s->rdi);
+			_swsmi(Irp->AssociatedIrp.SystemBuffer);
 			Status = STATUS_SUCCESS;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
@@ -597,6 +601,77 @@ NTSTATUS WriteMSR(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 			
 		}
 		
+	}
+	return Status;
+}
+
+NTSTATUS ReadIOPort(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(IO_PORT_CALL)) {
+		if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(IO_PORT_CALL)) {
+			PIO_PORT_CALL p = (PIO_PORT_CALL)Irp->AssociatedIrp.SystemBuffer;
+			__try {
+				switch(p->size) {
+					case IO_SIZE_BYTE:
+						p->data = __inbyte(p->port);
+						break;
+					case IO_SIZE_WORD:
+						p->data = __inword(p->port);
+						break;
+					case IO_SIZE_DWORD:
+						p->data = __indword(p->port);
+						break;
+					default:
+						Irp->IoStatus.Information = 0;
+						return STATUS_INVALID_PARAMETER;
+				}
+				memcpy(Irp->AssociatedIrp.SystemBuffer, p, sizeof(IO_PORT_CALL));
+				Irp->IoStatus.Information = sizeof(IO_PORT_CALL);
+				Status = STATUS_SUCCESS;
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER) {
+				*(DWORD64 *)Irp->AssociatedIrp.SystemBuffer = 0xFFFFFFFFFFFFFFFF;
+				Irp->IoStatus.Information = sizeof(DWORD64);
+				Status = STATUS_UNSUCCESSFUL;
+			}
+		}
+	}
+	return Status;
+}
+
+NTSTATUS WriteIOPort(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(IO_PORT_CALL)) {
+		PIO_PORT_CALL p = (PIO_PORT_CALL)Irp->AssociatedIrp.SystemBuffer;
+		__try {
+			switch(p->size) {
+				case IO_SIZE_BYTE:
+					__outbyte(p->port, p->data);
+					break;
+				case IO_SIZE_WORD:
+					__outword(p->port, p->data);
+					break;
+				case IO_SIZE_DWORD:
+					__outdword(p->port, p->data);
+					break;
+				default:
+					return STATUS_INVALID_PARAMETER;
+			}
+			Status = STATUS_SUCCESS;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+			Status = STATUS_UNSUCCESSFUL;
+		}	
 	}
 	return Status;
 }
