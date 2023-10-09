@@ -33,18 +33,15 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
 
 
 
-add_executable(AcerSpiAccessViaSmiPoc Acer/SpiAccessViaSmi.cpp)
+add_executable(AcerSpiAccessViaSmiPoc Acer/CVE-2023-28468.cpp)
+add_executable(HuaweiSpiAccessViaSmiPoc Huawei/CVE-2023-28468.cpp)
 add_executable(AcerSmmCalloutPoc Acer/SmmCallout.cpp)
-
-
 add_executable(SecureCoreAcer SecureCoreAcer/DirectSpiAccess.cpp)
 
 # Link libraries
 
 
-
-
 target_link_libraries(AcerSpiAccessViaSmiPoc platbox_lib)
+target_link_libraries(HuaweiSpiAccessViaSmiPoc platbox_lib)
 target_link_libraries(AcerSmmCalloutPoc platbox_lib)
-
 target_link_libraries(SecureCoreAcer platbox_lib)
