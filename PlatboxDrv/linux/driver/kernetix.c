@@ -2,6 +2,7 @@
 ** Kernetix Device Driver for fun and profit
 */
 
+#include <linux/version.h>
 #include <linux/init.h>
 #include <linux/module.h>  /* Needed by all modules */
 #include <linux/kernel.h>  /* Needed for KERN_ALERT */
@@ -61,8 +62,17 @@ int device_mmap(struct file *filp, struct vm_area_struct *vma)
     unsigned long offset = vma->vm_pgoff;
 
     if (offset >= __pa(high_memory) || (filp->f_flags & O_SYNC))
-        vma->vm_flags |= VM_IO;
-    vma->vm_flags |= (VM_DONTEXPAND | VM_DONTDUMP);
+        #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0) // linux bc292ab00f6c
+                vma->vm_flags |= VM_IO;
+        #else
+                vm_flags_set(vma, VM_IO);
+        #endif
+
+    #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 3, 0) // linux bc292ab00f6c
+            vma->vm_flags |= (VM_DONTEXPAND | VM_DONTDUMP);
+    #else
+            vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
+    #endif
 
     if (io_remap_pfn_range(vma, vma->vm_start, offset, 
         vma->vm_end-vma->vm_start, vma->vm_page_prot))
@@ -491,7 +501,11 @@ static int driver_initialize(void)
   kernetix_major = MAJOR(dev_number);
   
   /* Create device class (before allocation of the device) */
-  device_class = class_create(THIS_MODULE, KERNETIX_DEVICE_NAME);
+  #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 4, 0) // linux 1aaba11da9aa
+      device_class = class_create(THIS_MODULE, KERNETIX_DEVICE_NAME);
+  #else
+      device_class = class_create(KERNETIX_DEVICE_NAME);
+  #endif
   if (IS_ERR(device_class)) 
   {
     err = PTR_ERR(device_class);
