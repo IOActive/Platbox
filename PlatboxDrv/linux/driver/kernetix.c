@@ -393,6 +393,7 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
       }
 
       case IOCTL_GET_EFI_MEMMAP_ADDRESS:
+      {
 
         UINT64 *addr_result;	  
         
@@ -403,6 +404,7 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
         put_user( (long unsigned int *) &efi.memmap, (unsigned long **)addr_result );    
 
         break;
+      }
 
       case IOCTL_READ_IO_PORT:
         if (copy_from_user(&_io, p, sizeof(IO_PORT_CALL))) {
