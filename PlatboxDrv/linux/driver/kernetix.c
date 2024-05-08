@@ -88,6 +88,7 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
 	
 	struct _kernel_write *kwrite = NULL;
 	struct _kernel_read *kread = NULL;
+	UINT64 *addr_result;
   IO_PORT_CALL _io;
 	unsigned long _cr3;
 
@@ -392,9 +393,7 @@ static long int kernetix_ioctl(struct file *file, unsigned int cmd, unsigned lon
         break;        
       }
 
-      case IOCTL_GET_EFI_MEMMAP_ADDRESS:
-
-        UINT64 *addr_result;	  
+      case IOCTL_GET_EFI_MEMMAP_ADDRESS:	  
         
         if ( copy_from_user(&addr_result, p, sizeof(UINT64)) != 0)
           return -EINVAL; 
