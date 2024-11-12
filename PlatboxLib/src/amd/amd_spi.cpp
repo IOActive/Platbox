@@ -239,6 +239,7 @@ void load_spi_information(DWORD spi_addr, bool new_chipset) {
             SPI_SECTOR_ERASE_OP = Winbond_25Q128JVS_SECTOR_ERASE_OP;
             break;
         default:
+            SPI_SECTOR_ERASE_OP = 0x20;
             break;
     }
 

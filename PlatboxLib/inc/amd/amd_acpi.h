@@ -28,3 +28,4 @@ extern UINT64 gAcpiMMIOAddr;
 
 UINT16 get_amd_smi_trigger_port();
 void get_amd_smi_trigger_port_iopm();
+

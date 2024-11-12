@@ -217,7 +217,7 @@ void smm_dump_s3_bootscript_manual(UINT64 rtcode_start, UINT64 rtcode_end, const
 
 
 
-typedef HANDLE EFI_HANDLE;
+typedef HANDLE * EFI_HANDLE;
 typedef UINT64 UINTN;
 typedef UINT64 EFI_PHYSICAL_ADDRESS;
 typedef UINT64 EFI_SMM_ENTRY_POINT;
@@ -368,3 +368,6 @@ typedef struct {
   EFI_PHYSICAL_ADDRESS               Buffer;
   UINT64                             Length;
 } EFI_SMM_LOCK_BOX_PARAMETER_RESTORE;
+
+
+UINT64 get_smm_core_private();

@@ -22,7 +22,7 @@
 /* Structures and Variables */
 
 typedef struct _FUZZER_OBJECT {
-	unsigned int Seed;
+	uint64_t Seed;
 	double FuzzPossibility;
 	double UnmapPossibility;
 	uint64_t Iterations;
@@ -45,7 +45,7 @@ void _mutateBitFlipping(FUZZER_OBJECT *fuzzer, unsigned char *blob, unsigned int
 void _singleBitFlipping(FUZZER_OBJECT *fuzzer, unsigned char *blob, unsigned int start, unsigned int end);
 unsigned int _getRandomRange(FUZZER_OBJECT *fuzzer, unsigned int min, unsigned int max);
 
-void CreateFuzzerObject(FUZZER_OBJECT **fuzzer, unsigned int seed, int FuzzGenerate, int FuzzMutate);
+void CreateFuzzerObject(FUZZER_OBJECT **fuzzer, uint64_t seed, int FuzzGenerate, int FuzzMutate);
 void DestroyFuzzerObject(FUZZER_OBJECT *fuzzer);
 
 void FuzzBlob(FUZZER_OBJECT *fuzzer, unsigned char *blob, unsigned int size);

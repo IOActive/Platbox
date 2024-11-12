@@ -17,7 +17,7 @@
 
 
 UINT64 g_SMMCorePrivateAddr = 0;
-UINT64 _get_smm_core_private() {
+UINT64 get_smm_core_private() {
     if (g_SMMCorePrivateAddr != 0) {
         return g_SMMCorePrivateAddr;
     }
@@ -27,7 +27,10 @@ UINT64 _get_smm_core_private() {
         UINT64 EfiRtCodeStart = 0;
         UINT64 EfiRtCodeEnd   = 0;
 
-        read_efi_memory_map();
+        if (read_efi_memory_map() != 0) {
+            printf("cannot retrieve efi memory map\n");
+            return 0;
+        }
 
         efi_memory_desc_t *mm_desc  = g_EFI_memmap.mm_desc_array;
 
@@ -183,7 +186,7 @@ void smm_dump_s3_bootscript_manual(UINT64 rtcode_start, UINT64 rtcode_end, const
 void smm_dump_s3_bootscript(const char *output_filename) {
   
 
-    void *ptr = (void *) _get_smm_core_private();
+    void *ptr = (void *) get_smm_core_private();
     if (!ptr) {
         printf(" - smm_dump_s3_bootscript: failed to find SMM_CORE_PRIVATE_DATA\n");
         return;

@@ -78,7 +78,9 @@ void _write_pci_dword( UINT32 CF8, UINT32 value);
 void _read_pci_bar_size( UINT32 CF8, PVOID pOut);
 void _rdmsr(int MSR, PVOID pOut);
 void _wrmsr(int MSR, UINT64 Value);
-
+void _cli(void);
+void _sti(void);
+void _swsmi_sinkclose(UINT64 trigger_port);
 
 
 typedef struct _SW_SMI_CALL {
@@ -103,6 +105,8 @@ typedef struct _SW_SMI_CALL {
 } SW_SMI_CALL, *PSW_SMI_CALL;
 
 void _swsmi(SW_SMI_CALL *smi_call);
+
+void _store_savestate(void *base_address);
 
 typedef struct _READ_PCI_CONFIGURATION_SPACE_CALL {
 	UINT8 bus;
@@ -149,16 +153,35 @@ typedef struct _READ_MSR_CALL {
   UINT64 *result;
 } READ_MSR_CALL, *PREAD_MSR_CALL;
 
+typedef struct _READ_MSR_FOR_CORE_CALL {
+	UINT32 core_id;
+	UINT32 msr;
+  	UINT64 result;
+} READ_MSR_FOR_CORE_CALL, *PREAD_MSR_FOR_CORE_CALL;
+
 typedef struct _WRITE_MSR_CALL {
 	UINT32 msr;
 	UINT64 value;
 } WRITE_MSR_CALL, *PWRITE_MSR_CALL;
+
+typedef struct _WRITE_MSR_FOR_CORE_CALL {
+	UINT32 core_id;
+	UINT32 msr;
+  	UINT64 value;
+} WRITE_MSR_FOR_CORE_CALL, *PWRITE_MSR_FOR_CORE_CALL;
 
 typedef struct _IO_PORT_CALL {
 	UINT8  size;
 	UINT16 port;
 	UINT32 data;
 } IO_PORT_CALL, *PIO_PORT_CALL;
+
+struct virt_to_phys
+{
+	UINT64 vaddr;
+	UINT64 physaddr;
+};
+
 
 /* Use 'n' as magic number */
 #define KERNETIX_IOC_MAGIC  'n'
@@ -168,7 +191,7 @@ typedef struct _IO_PORT_CALL {
 #define KERNETIX_CR3 _IOR(KERNETIX_IOC_MAGIC,  2, unsigned int)
 
 
-#define IOCTL_ISSUE_SW_SMI  _IOR(KERNETIX_IOC_MAGIC,  3, void *)
+#define IOCTL_ISSUE_SW_SMI  _IOWR(KERNETIX_IOC_MAGIC,  3, void *)
 #define IOCTL_EXECUTE_SHELLCODE  _IOWR(KERNETIX_IOC_MAGIC,  4, void *)
 #define IOCTL_READ_PCI_HEADER  _IOWR(KERNETIX_IOC_MAGIC,  5, void *)
 #define IOCTL_READ_PCI_BYTE  _IOWR(KERNETIX_IOC_MAGIC,  6, void *)
@@ -188,7 +211,17 @@ typedef struct _IO_PORT_CALL {
 #define IOCTL_RESTORE_CALLBACK _IOWR(KERNETIX_IOC_MAGIC,  18, void *)
 #define IOCTL_REMOVE_ALL_CALLBACKS_HOOKS _IOWR(KERNETIX_IOC_MAGIC,  19, void *)
 
-#define IOCTL_GET_EFI_MEMMAP_ADDRESS _IOWR(KERNETIX_IOC_MAGIC,  20, void *)
+#define IOCTL_GET_EFI_MEMMAP_ADDRESS _IOWR(KERNETIX_IOC_MAGIC,  20, UINT64)
 
 #define IOCTL_READ_IO_PORT _IOR(KERNETIX_IOC_MAGIC,  21, void *)
 #define IOCTL_WRITE_IO_PORT _IOR(KERNETIX_IOC_MAGIC,  22, void *)
+
+#define IOCTL_SINKCLOSE _IOWR(KERNETIX_IOC_MAGIC,  23, void *)
+
+#define IOCTL_READ_MSR_FOR_CORE _IOWR(KERNETIX_IOC_MAGIC,  24, READ_MSR_FOR_CORE_CALL)
+#define IOCTL_WRITE_MSR_FOR_CORE _IOWR(KERNETIX_IOC_MAGIC,  25, WRITE_MSR_FOR_CORE_CALL)
+
+
+#define IOCTL_VIRT_TO_PHYS     			 _IOWR   (KERNETIX_IOC_MAGIC,      28, struct virt_to_phys)
+
+

@@ -55,6 +55,61 @@ void get_processor_model(BYTE *family, BYTE *model) {
 }
 
 
+#define CPUID_VIR_PHY_ADDRESS_SIZE  0x80000008
+#define CPUID_EXTENDED_FUNCTION  0x80000000
+#define CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS  0x07
+int is_5_level_paging() {
+
+#ifdef __linux__
+    UINT32 eax = 0, ebx = 0, ecx = 0, edx = 0;
+
+    UINT32 VirPhyAddressSize = 0;
+    __get_cpuid(CPUID_EXTENDED_FUNCTION, &eax, &ebx, &ecx, &edx);
+    if (eax >= CPUID_VIR_PHY_ADDRESS_SIZE) {
+        __get_cpuid (CPUID_VIR_PHY_ADDRESS_SIZE, &VirPhyAddressSize, NULL, NULL, NULL);
+    } else {
+        return FALSE;
+    }
+
+    __get_cpuid(CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS, &eax, &ebx, &ecx, &edx);
+
+    UINT32 FiveLevelPage = (ecx >> 16) & 1;
+    UINT32 PhysicalAddressBits = VirPhyAddressSize & 0xFF;
+    if ((PhysicalAddressBits > 4 * 9 + 12) && (FiveLevelPage == 1)) {
+        return TRUE;
+    } else {
+        return FALSE;
+   }
+
+ 
+#else // _WIN32
+    int regs[4] = { 0 };
+     UINT32 VirPhyAddressSize = 0;
+
+    __cpuidex(&regs[0], CPUID_EXTENDED_FUNCTION, 0);
+    
+    if (regs[0] >= CPUID_VIR_PHY_ADDRESS_SIZE) {
+        __cpuidex (&regs[0], CPUID_VIR_PHY_ADDRESS_SIZE, 0);
+    } else {
+        return FALSE;
+    }
+
+    VirPhyAddressSize = regs[0];
+
+    __cpuidex(&regs[0], CPUID_STRUCTURED_EXTENDED_FEATURE_FLAGS, 0);
+    UINT32 FiveLevelPage = (regs[2] >> 16) & 1;
+    UINT32 PhysicalAddressBits = VirPhyAddressSize & 0xFF;
+    if ((PhysicalAddressBits > 4 * 9 + 12) && (FiveLevelPage == 1)) {
+        return TRUE;
+    } else {
+        return FALSE;
+   }
+
+
+#endif
+}
+
+
 void dump_spi_flash(const char *output_filename) {
     switch(get_processor_type()) {
         case _INTEL_PROCESSOR:
@@ -107,4 +162,17 @@ UINT16 get_smi_trigger_port() {
     }
 
     return 0;
+}
+
+
+int get_number_of_cores() {
+
+    #ifdef _WIN32 
+        SYSTEM_INFO sysInfo;
+        GetSystemInfo(&sysInfo);
+        DWORD result = sysInfo.dwNumberOfProcessors;
+        return result;
+    #else
+        return sysconf(_SC_NPROCESSORS_ONLN);
+    #endif
 }

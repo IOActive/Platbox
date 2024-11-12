@@ -1,13 +1,11 @@
-// Written by Enrique Nissim (IOActive) 06/2018
-
 #include "PlatboxClient.h"
 
 #pragma comment(lib, "platbox_lib.lib")
 
-/*
-extern "C" {
-	void _run_attempt();
-}*/
+
+// extern "C" {
+// 	void _run_attempt();
+// }
 
 void parse_handle_physmem_operation(int argc, char **argv) {
 	// physmem r 0x000000 0x100--> reads 0x100 bytes from physical address 0
@@ -108,6 +106,13 @@ void read_msr(int argc, char **argv) {
 		enable_debug_mode();
 		do_read_msr(msr, NULL);
 		restore_debug_mode();
+	} else if (argc == 3 && !strcmp(argv[1], "all")) {
+		UINT msr = strtoul(argv[2], NULL, 16);
+		UINT64 val;
+		for (int i = 0; i < get_number_of_cores(); i++) {
+			do_read_msr_for_core(i, msr, &val);
+			printf("-> Core-%d MSR-[%08x]: %016llx\n", i, msr, val);
+		}
 	}
 }
 
@@ -224,6 +229,7 @@ void show_cli_help() {
 	printf("free 0xFEA000 -> frees that memory (if it was mapped by PlatboxDrv)\n");
 	printf("dd 0xFEA0000 0x100 -> dumps the first 0x100 bytes of the memory address\n");
 	printf("rdmsr 0x1F2 -> reads MSR 0x1F2\n");
+	printf("rdmsr all 0x1B -> reads MSR 0x1B on all cores\n");
 	printf("wrmsr 0x1F2 0xA000 -> Writes 0xA0000 into MSR 0x1F2\n");
 	printf("uefivars -> dump UEFI variables -> requires admin privileges\n");
 	printf("fuzzsmi 0x44 -> fuzz SW SMI number 0x44\n");

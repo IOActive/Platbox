@@ -1,0 +1,51 @@
+## @file
+#  Component description file for QEMU Flash Firmware Volume Block SMM driver
+#  module.
+#
+#  This SMM driver implements and produces the SMM Firmware Volue Block Protocol
+#  for a QEMU flash device.
+#
+#  Copyright (C) 2015, Red Hat, Inc.
+#  Copyright (c) 2006 - 2013, Intel Corporation. All rights reserved.<BR>
+#
+#  SPDX-License-Identifier: BSD-2-Clause-Patent
+#
+##
+
+[Defines]
+  INF_VERSION                    = 0x00010005
+  BASE_NAME                      = SmmBackdoor
+  FILE_GUID                      = 22D5AE41-147E-4C44-AE72-ECD9BBB455C1
+  MODULE_TYPE                    = DXE_SMM_DRIVER
+  VERSION_STRING                 = 1.0
+  PI_SPECIFICATION_VERSION       = 0x0001000A
+  ENTRY_POINT                    = SmmBackdoorInit
+
+#
+# The following information is for reference only and not required by the build
+# tools.
+#
+#  VALID_ARCHITECTURES           = IA32 X64
+#
+
+[Sources.X64]
+  SmmBackdoor.c
+
+[Packages]
+  MdePkg/MdePkg.dec
+  MdeModulePkg/MdeModulePkg.dec
+
+[LibraryClasses]
+  UefiDriverEntryPoint
+  UefiBootServicesTableLib
+  SmmServicesTableLib
+
+[Guids]
+
+[Protocols]
+  gEfiSmmSwDispatch2ProtocolGuid
+  gEfiMpServiceProtocolGuid
+
+[Depex]
+  gEfiSmmSwDispatch2ProtocolGuid AND
+  gEfiMpServiceProtocolGuid

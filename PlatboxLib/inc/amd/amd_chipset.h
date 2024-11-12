@@ -18,9 +18,12 @@ void amd_dump_spi_flash(const char *output_filename);
 
 //////////////////// AMD ////////////////
 
+#define MSR_SMM_KEY     0xC0010119
+
 #define AMD_SMI_HANDLER_ENTRY_POINT 0x8000
 #define AMD_SMM_STATE_SAVE_AREA     0xFE00
 
+#define BIT_MSR_HWCR_SMM_BASE_LOCK  1 << 31
 #define BIT_MSR_HWCR_SMMLOCK  1 << 0
 
 // https://www.amd.com/system/files/TechDocs/45482.pdf
@@ -31,7 +34,11 @@ enum AMD_MSRS {
 	MSR C001_0015 Hardware Configuration (HWCR)
 	Bits Description
 		63:32 Reserved.
-		31:30 Reserved.
+
+		31 SmmBaseLock
+			SmmBaseLock. Reset: 0. Check: 1. 1=Core::X86::Msr::SMM_BASE is not saved to
+			Core::X86::Smm::SmmBase on an SMI and is not restored on RSM. Disable Core::X86::Msr::SMM_BASE from
+			being saved to and restored from the SMM save state area
 		...
 		13 SmiSpCycDis: SMI special bus cycle disable. IF MSRC001_0015[SmmLock] THEN Read-only 
 			ELSE Read-write ENDIF. Reset: 0. 0=A link special bus cycle, SMIACK, is generated when an SMI 

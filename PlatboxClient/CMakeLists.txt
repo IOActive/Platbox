@@ -37,4 +37,4 @@ set (PROJECT_SOURCES
 add_executable(platbox_cli  "${PROJECT_SOURCES}")
 
 # link lib
-target_link_libraries (platbox_cli  platbox_lib)
+target_link_libraries (platbox_cli  platbox_lib -static)

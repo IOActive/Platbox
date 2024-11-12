@@ -31,6 +31,24 @@ char **parse_arguments(char *command_line, char arg_delim) {
 	return args;
 }
 
+void memcpy4(void *dst, void *src, size_t size) {
+    int dws = size >> 2;
+    int i = 0;
+    for ( ; i < dws; i++) {
+        ((int *)dst)[i] = ((int *)src)[i];
+    }
+
+    int remainder = size & 0b11;
+    if (remainder) {
+        int buff = 0;
+        for (int k = 0; k < remainder; k++) {
+            ((char *)&buff)[k] = ((char *)src)[k];
+        }        
+        ((int *)dst)[i] = buff;
+    }
+    
+}
+
 void get_user_input(char *input, int size) {
 	memset(input, 0x00, size);
 	fgets(input, size, stdin);

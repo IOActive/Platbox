@@ -5,6 +5,9 @@ cmake_minimum_required(VERSION 3.13)
 # as Visual Studio projects (.vcproj)
 project (PlatboxLib)
 
+if (WIN32)
+    set(CMAKE_CXX_STANDARD 20)
+endif (WIN32)
 
 include_directories (
     "${PROJECT_SOURCE_DIR}/inc"
@@ -24,7 +27,7 @@ if (WIN32)
         src/UEFIVars.cpp
         src/global.cpp
         src/Util.cpp
-        src/_run_attempt.asm
+        #src/_run_attempt.asm
         src/common_chipset.cpp
         
         src/windows/kernelHookCb.cpp
@@ -41,6 +44,8 @@ if (WIN32)
         src/smm/smm_communicate.cpp
         src/smm/smi.cpp
         src/smm/smi_fuzz.cpp
+
+        src/ec/ite8638.cpp
     )
 endif (WIN32)
 
@@ -57,7 +62,7 @@ if (UNIX)
         src/UEFIVars.cpp
         src/global.cpp
         src/Util.cpp
-        src/_run_attempt.asm
+        #src/_run_attempt.asm
         src/common_chipset.cpp        
 
         src/intel/intel_chipset.cpp

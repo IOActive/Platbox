@@ -71,7 +71,7 @@ BYTE read_pci_byte(UINT8 bus, UINT8 device, UINT8 function, UINT offset) {
 
 		aux = *(BYTE *) target_addr;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 		
 	} else {
 
@@ -126,7 +126,7 @@ WORD read_pci_word(UINT8 bus, UINT8 device, UINT8 function, UINT offset) {
 
 		aux = *(WORD *) target_addr;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 
 	} else {
 
@@ -181,7 +181,7 @@ DWORD read_pci_dword(UINT8 bus, UINT8 device, UINT8 function, UINT offset) {
 
 		aux = *(DWORD *) target_addr;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 
 	} else {
 		NTSTATUS status;
@@ -228,7 +228,7 @@ void write_pci_byte(UINT8 bus, UINT8 device, UINT8 function, UINT offset, UINT v
 
 		*(BYTE *) target_addr = value;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 		
 	} else {
 
@@ -278,7 +278,7 @@ void write_pci_word(UINT8 bus, UINT8 device, UINT8 function, UINT offset, UINT v
 
 		*(WORD *) target_addr = value;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 		
 	} else {
 
@@ -328,7 +328,7 @@ void write_pci_dword(UINT8 bus, UINT8 device, UINT8 function, UINT offset, UINT 
 
 		*(DWORD *) target_addr = value;
 
-		unmap_physical_memory(target_addr, 0x1000);
+		unmap_physical_memory_unaligned(target_addr, 0x1000);
 		
 	} else {
 
@@ -397,3 +397,26 @@ void read_pci_bar_info(UINT8 bus, UINT8 device, UINT8 function, UINT offset) {
 
 }
 
+
+void pci_enable_memory_space(UINT8 bus, UINT8 device, UINT8 function) {
+	// Writes to PCI Command
+	WORD val = read_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1);
+	write_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1, val | MEMORY_SPACE_BIT);
+}
+
+
+void pci_disable_memory_space(UINT8 bus, UINT8 device, UINT8 function) {
+	WORD val = read_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1);
+	write_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1, val & ~(MEMORY_SPACE_BIT));
+}
+
+
+void pci_enable_bus_master(UINT8 bus, UINT8 device, UINT8 function) {
+	WORD val = read_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1);
+	write_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1, val | BUS_MASTER_BIT);
+}
+
+void pci_disable_bus_master(UINT8 bus, UINT8 device, UINT8 function) {
+	WORD val = read_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1);
+	write_pci_word(bus, device, function, PCI_COMMAND_OFFSET >> 1, val & ~(BUS_MASTER_BIT));
+}

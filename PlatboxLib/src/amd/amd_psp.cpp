@@ -113,6 +113,38 @@ void send_psp_msg(BYTE psp_cmd, UINT64 buffer_physaddr)
 
 
 
+void armor_spi_transaction() {
+
+
+    // Prepare PSP payload buffer
+    const UINT alloc_size = PAGE_SIZE;
+    struct alloc_user_physmem user_page = {0};
+    BOOL res = alloc_user_mem(alloc_size, &user_page);
+
+    if (!res) {
+        return;
+    }
+
+    struct alloc_user_physmem aux_page = {0};
+    res = alloc_user_mem(alloc_size, &aux_page);
+
+    *(UINT32 *)aux_page.va = 0x41414141;
+
+    ArmorSpiTransactionRecord *record = (ArmorSpiTransactionRecord *) user_page.va;
+    record->record_size = sizeof(*record);
+    record->flash_address = 0x10;
+    record->trn_type = PSP_CMD_ARMOR_SPI_TRANSACTION_WRITE_OP;
+    record->trn_length = 4;
+    record->aux_memory_page = aux_page.pa;
+    
+    printf("psp message sent!\n");
+    send_psp_msg(PSP_CMD_ARMOR_SPI_TRANSACTION, user_page.pa);
+
+    unmap_physical_memory((void *) user_page.va, PAGE_SIZE);
+    unmap_physical_memory((void *) aux_page.va, PAGE_SIZE);
+
+}
+
 static const char *psb_test_status_to_string(UINT32 status)
 {
 	switch (status) {

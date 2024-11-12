@@ -103,6 +103,9 @@ typedef struct _ArmorSpiTransactionRecord { // 0x20
 } ArmorSpiTransactionRecord;
 #pragma pack (pop)
 
+void armor_spi_transaction();
+
+
 
 #define PSP_MAILBOX_PSB_STATUS_OFFSET 0x10994
 #define PSP_MAILBOX_CONFIG2_OFFSET 0x10998

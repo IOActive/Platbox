@@ -51,6 +51,10 @@ void * map_physical_memory(UINT64 address, UINT32 size) {
 	return NULL;
 }
 
+void unmap_physical_memory_unaligned(void *ptr, UINT32 size) {
+	unmap_physical_memory((void *)((UINT64)ptr & PAGE_MASK), size);
+}
+
 void unmap_physical_memory(void *ptr, UINT32 size) {
 
 	#ifdef __linux__
@@ -380,7 +384,7 @@ char efi_memory_type_name[][13] = {
 };
 
 
-void do_kernel_va_read(UINT64 va, UINT32 size, char *buff) {
+int do_kernel_va_read(UINT64 va, UINT32 size, char *buff) {
 	
 	NTSTATUS status;
 
@@ -390,7 +394,7 @@ void do_kernel_va_read(UINT64 va, UINT32 size, char *buff) {
 
 		if ((size & 7) != 0) {
 			debug_print("- error: attempted to read kernel VA for an invalid size\n");
-			return;
+			return -1;
 		}
 
 		for (UINT32 offset = 0; offset < size; offset += sizeof(PVOID)) {
@@ -414,45 +418,63 @@ void do_kernel_va_read(UINT64 va, UINT32 size, char *buff) {
 
 		if (status != STATUS_SUCCESS) {
 			debug_print(" - error: ioctl for reading kernel va failed!\n");
+			
 		} 
-
 	#endif
+
+	return status;
 }
 
 
-void read_efi_memory_map() {
+int read_efi_memory_map() {
 
 	NTSTATUS status = 0;
 
 	#ifdef __linux__
 
 		if (g_EFI_memmap.mm_desc_array != 0) {
-			return;
+			return 0;
 		}
 
+		memset(&g_EFI_memmap, 0x00, sizeof(g_EFI_memmap));
+		
 		status = -1;	
-		UINT64 *p = &g_EFI_memmap.kernel_vaddr;
-		status = ioctl(g_hDevice, IOCTL_GET_EFI_MEMMAP_ADDRESS, &p);
+		status = ioctl(
+			g_hDevice, 
+			IOCTL_GET_EFI_MEMMAP_ADDRESS, 
+			&g_EFI_memmap.kernel_vaddr
+		);
+
 		if (status == 0) {
-			debug_print("-> EFI Memory Map at %016lx\n", g_EFI_memmap.kernel_vaddr);
+			debug_print("-> EFI Memory Map at %016lx\n",
+				 g_EFI_memmap.kernel_vaddr);
+		} else {
+			printf("- error retrieving EFI memmap kernel addr\n");
+			return -1;
 		}
 
-		do_kernel_va_read(g_EFI_memmap.kernel_vaddr, 
+		status = do_kernel_va_read(g_EFI_memmap.kernel_vaddr, 
 			sizeof(struct efi_memory_map), (char *) &g_EFI_memmap.efi_memmap);
+
+		if (status) {
+			debug_print("- error reading efi_memory_map structure\n");
+			return -1;
+		}
+
+		print_struct_efi_memory_map(&g_EFI_memmap.efi_memmap);
 		
-		//print_memory(0, (char *) &g_EFI_memmap.efi_memmap, sizeof(struct efi_memory_map));
-		
+
 		UINT32 map_range = g_EFI_memmap.efi_memmap.map_end - g_EFI_memmap.efi_memmap.map;
 		
-		// if( g_EFI_memmap.efi_memmap.desc_size != sizeof(efi_memory_desc_t)) {
-		// 	printf("error: sizeof of efi mem descriptor does not match\n");
-		// 	return;
-		// }
-		
-		// if ((map_range / g_EFI_memmap.efi_memmap.desc_size) == g_EFI_memmap.efi_memmap.nr_map) {
-		// 	printf("error: nr_map does not match\n");
-		// 	return;
-		// }
+		if( g_EFI_memmap.efi_memmap.desc_size != sizeof(efi_memory_desc_t)) {
+			debug_print("error: sizeof of efi mem descriptor does not match\n");
+			return -1;
+		}
+	
+		if ((map_range / g_EFI_memmap.efi_memmap.desc_size) != g_EFI_memmap.efi_memmap.nr_map) {
+			debug_print("error: nr_map does not match\n");
+			return -1;
+		}
 
 		g_EFI_memmap.mm_desc_array = (efi_memory_desc_t *)
 			calloc(g_EFI_memmap.efi_memmap.nr_map, sizeof(efi_memory_desc_t));
@@ -462,14 +484,21 @@ void read_efi_memory_map() {
 
 		for (int i = 0; i < g_EFI_memmap.efi_memmap.nr_map; i++) {
 
-			do_kernel_va_read(mem_desc_va, sizeof(efi_memory_desc_t), (char *) mm_desc);
+			status = do_kernel_va_read(mem_desc_va, sizeof(efi_memory_desc_t), (char *) mm_desc);
+			if (status) {				
+				free(g_EFI_memmap.mm_desc_array);
+				debug_print("- error reading efi_memory_desc_t structure\n");
+				return -1;
+			}
 
 			mem_desc_va += g_EFI_memmap.efi_memmap.desc_size;
 			mm_desc++;
 		}
+
+		return 0;
 	#endif
 
-
+	return -1;
 }
 
 
@@ -485,8 +514,11 @@ void print_efi_memory_map() {
 
 	#ifdef __linux__
 
-		read_efi_memory_map();
-		
+		if (read_efi_memory_map() != 0) {
+			printf("cannot retrieve efi memory map\n");
+			return;
+		}
+
 		efi_memory_desc_t *mm_desc  = g_EFI_memmap.mm_desc_array;
 
 		for (int i = 0; i < g_EFI_memmap.efi_memmap.nr_map; i++) {
@@ -501,106 +533,6 @@ void print_efi_memory_map() {
 			mm_desc++;
 		}
 
-	#elif _WIN32
-
-		// Activate the x86 Bios Emu (Not working). IVT is cleared from PFN 0
-
-		// Allocate memory within the first 2MB of the process address space
-		// This leads to the creation of the first PTE
-		/*
-		void   *zero_addr = (void *) 0x100000; // AT 1MB
-		SIZE_T alloc_size = 0x1000;
-		NTSTATUS alloc_status = NtAllocateVirtualMemory(
-				GetCurrentProcess(), 
-				&zero_addr,
-				0, 
-				&alloc_size, 
-				MEM_RESERVE | MEM_COMMIT,
-			 	PAGE_EXECUTE_READWRITE);
-					
-		if (alloc_status != STATUS_SUCCESS)
-		{
-			if (alloc_status == 0xc0000018)
-			{
-				printf("Error mapping: conflicting addresses\n");
-			}
-
-			printf("print_efi_memory_map - NtAllocateVirtualMemory failed %#08x\n", alloc_status);
-			return;
-		}
-
-		// Force the on-demand paging
-		memset(zero_addr, 0x41, 0x100);
-		//print_memory(0, (char *) zero_addr, 0x100);
-
-		// Map the the first 1MB Virtual Addresses to the 1MB Physical 
-		UINT64 pte_addr = get_pxe_address(0);
-		WRITE_KMEM_IN kmem_write;
-
-		UINT32 array_size = 256 * sizeof(UINT64);
-		UINT64 *pte_array_values = (UINT64 *) calloc(1, array_size);
-
-		// Initialize all the PTE entries for the 1MB mapping
-		for (int i = 0; i < 256; i++) {
-			pte_array_values[i]  = 0x0000000000000067 | (i << 12);
-		}
-
-		kmem_write.src_vaddr    = pte_array_values;
-		kmem_write.target_vaddr = pte_addr;
-		kmem_write.size         = array_size;
-
-		DWORD dwBytesReturned = 0;
-
-		DeviceIoControl(g_hDevice, IOCTL_WRITE_KMEM,
-			 &kmem_write, sizeof(kmem_write), NULL, 0, &dwBytesReturned, NULL);
-		// Tlb Refresh via Sleep
-		doSleep(200);
-
-		//print_memory(0x00, (char *) 0, 0x200);
-
-		// WORK HERE
-
-		HANDLE h = CreateFileW(
-        L"\\\\.\\x86emuhal",
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE, NULL, OPEN_EXISTING,
-        NULL,
-        NULL);
-
-		if (h == NULL || (int)h == -1) {
-			printf("Error: %08x\n", GetLastError());
-			printf("Check x86emuhal driver is loaded!\n");
-			exit(-1);
-		}
-
-		printf("Successfully opened handle: %016llx\n", h);
-
-		char* buff = (char *) calloc(1, sizeof(E820_MAP));
-
-		DWORD dwRetBytes = 0;
-
-		DeviceIoControl(h, IOCTL_GET_EFI_MEMORY_MAP, NULL, 0,
-			 buff, sizeof(E820_MAP), &dwRetBytes, NULL);
-
-		print_memory(0, buff, sizeof(E820_MAP));
-
-
-		free(buff);
-		CloseHandle(h);
-
-
-
-		// Clean it up
-		memset(pte_array_values, 0x00, array_size);
-		DeviceIoControl(g_hDevice, IOCTL_WRITE_KMEM,
-			 &kmem_write, sizeof(kmem_write), NULL, 0, &dwBytesReturned, NULL);
-		// Tlb Refresh via Sleep
-		doSleep(200);
-
-		free(pte_array_values);
-
-		NtFreeVirtualMemory(GetCurrentProcess(), &zero_addr, &alloc_size, MEM_RELEASE);
-		*/
 	#endif
 }
 
@@ -712,3 +644,49 @@ UINT32 get_highest_physical_range_below_4G() {
 }
 
 #endif
+
+
+UINT64 virt_to_phys(UINT64 va) {	
+
+	UINT64 result = 0;
+	#ifdef _WIN32
+		NTSTATUS status = -1;
+
+		UINT64 pa = 0;
+		DWORD bytesReturned = 0;
+		status = DeviceIoControl(
+			g_hDevice, 
+			IOCTL_GET_PHYSICAL_ADDRESS,
+			&va,
+			sizeof(va),
+			&pa,
+			sizeof(pa),
+			&bytesReturned,
+			NULL
+		);
+
+		if (NT_SUCCESS(status)) {
+			result = pa;
+		} else {
+			debug_print("error obtaining physical address for %016llx\n", va);
+		}
+
+	
+	#elif __linux__
+		int status;
+		struct virt_to_phys v2p = {
+			.vaddr 		= va & PAGE_MASK,
+			.physaddr 	= 0,
+		};
+
+		status = ioctl(g_hDevice, IOCTL_VIRT_TO_PHYS, &v2p); 
+
+		if (status != 0) {
+			debug_print("error obtaining physical address for %016llx\n", va);				
+		} else {
+			result = v2p.physaddr;
+		}
+	#endif
+
+	return result;
+}

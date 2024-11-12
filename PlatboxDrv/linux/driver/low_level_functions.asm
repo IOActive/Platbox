@@ -9,9 +9,37 @@ global _write_pci_word
 global _write_pci_dword
 global _rdmsr
 global _wrmsr
-
+global _store_savestate
+global _cli
+global _sti
+global _swsmi_sinkclose
 
 section .text
+
+
+_store_savestate:
+; 0x3200 -> RIP
+; 0x3208 -> RSP
+; 0x3210 -> RBP
+; 0x3218 -> CR3
+; 0x3220 -> Mutex (signal from core0)
+
+	; Save CR3
+    push rax
+    mov rax, cr3
+    mov [rdi + 18h], rax
+
+    ; RIP is not saved here?
+    mov rax, _exit_store_savestate
+    mov [rdi], rax
+    pop rax
+    
+    mov [rdi + 10h], rbp
+    mov [rdi + 08h], rsp
+
+	mov dword [rdi + 20h], 0 ; Set the Mutex to 0
+_exit_store_savestate:
+    ret
 
 ; void _swsmi(SW_SMI_CALL *smi_call);
 _swsmi:
@@ -52,7 +80,8 @@ _swsmi:
     or rax,  [rdi] 
 
     mov rdi, [rdi + 040h] ; get rdi value just before the OUT instruction
-    
+	
+	wbinvd
     ; this OUT instruction will write WORD value (smi_code_data) to ports 0xB2 and 0xB3 (SW SMI control and data ports)
     out dx, ax
 
@@ -94,6 +123,15 @@ _swsmi:
 
     xor rax, rax
 
+    ret
+
+_swsmi_sinkclose:
+    ; The trigger port might be different than 0xB2 in AMD
+    mov dx, [rdi] 
+	xor rax, rax
+	wbinvd
+    out dx, ax
+    xor rax, rax
     ret
 
 ; _read_pci_compatible_configuration_space(UINT8 Bus, UINT8 Device, UINT8 Function, PVOID pOut)
@@ -290,3 +328,12 @@ _read_pci_bar_size:
     mov rcx, rdi
     wrmsr	
     ret
+
+
+_cli:
+	cli
+	ret
+
+_sti:
+	sti
+	ret

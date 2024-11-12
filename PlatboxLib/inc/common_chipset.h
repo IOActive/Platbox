@@ -36,3 +36,6 @@ void dump_spi_flash(const char *output_filename);
 void get_tseg_region(UINT64 *base, UINT32 *size);
 
 UINT16 get_smi_trigger_port();
+int get_number_of_cores();
+
+int is_5_level_paging();

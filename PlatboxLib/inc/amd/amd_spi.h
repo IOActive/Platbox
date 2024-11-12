@@ -88,6 +88,7 @@ typedef struct _SPI {
 
 	// 0x20
 	BYTE SPI100Enable;
+	BYTE Unk;
 
 	// 0x22
 	WORD SPI100SpeedConfig;

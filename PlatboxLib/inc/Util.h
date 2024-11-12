@@ -6,6 +6,10 @@
 
 #include "global.h" // switch for types.h?
 
+#define __ALIGN_MASK(x, mask)  (((x) + (mask)) & ~(mask))
+#define ALIGN(x, a)  __ALIGN_MASK((x), ((a) - 1))
+
+
 #ifdef _WIN32
 	#include "__win.h"
 #endif
@@ -47,6 +51,7 @@
 
 
 /* Utils */
+void memcpy4(void *dst, void *src, size_t size);
 void print_memory(unsigned long address, char *buffer, unsigned int bytes_to_print);
 void get_user_input(char *input, int size);
 char **parse_arguments(char *command_line, char arg_delim);

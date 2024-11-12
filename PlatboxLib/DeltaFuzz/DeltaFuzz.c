@@ -19,7 +19,7 @@ unsigned short shorts[] = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0x3f, 0x40, 0x
 unsigned int ints[] = { 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff };
 unsigned long long qwords[] = { 0,1,2,3,4,5,6,7,8,9,10,11,0x3f, 0x40, 0x41, 0x7f, 0x80, 0x81,  0xff, 0x100, 0x101, 0x3fff, 0x4000, 0x4001, 0x7fff, 0x8000, 0x8001, 0xffff, 0x10000, 0x10001, 0x3fffffff, 0x40000000, 0x40000001, 0x7fffffff, 0x80000000, 0x80000001, 0xffffffff, 0x100000000, 0x100000001, 0x3fffffffffffffff, 0x4000000000000000, 0x4000000000000001, 0x7fffffffffffffff, 0x8000000000000000, 0x8000000000000001, 0xffffffffffffffff };
 
-unsigned int tsc_aux = 0;
+uint64_t tsc_aux = 0;
 
 void(*fpMutatorsArray[6])(FUZZER_OBJECT *fuzzer, unsigned char *blob, unsigned int start, unsigned int end) = {
 	&_mutateNullRange,
@@ -37,7 +37,7 @@ int wrapper_rand(FUZZER_OBJECT *fuzzer) {
 	return xrand();
 }
 
-void CreateFuzzerObject(FUZZER_OBJECT **fuzzer, unsigned int seed, int FuzzGenerate, int FuzzMutate) {
+void CreateFuzzerObject(FUZZER_OBJECT **fuzzer, uint64_t seed, int FuzzGenerate, int FuzzMutate) {
 	*fuzzer = (PFUZZER_OBJECT)calloc(1, sizeof(FUZZER_OBJECT));
 
 	#ifdef __linux__
@@ -51,11 +51,9 @@ void CreateFuzzerObject(FUZZER_OBJECT **fuzzer, unsigned int seed, int FuzzGener
 		
 	#elif _WIN32
 		g_state = (seed) ? seed : __rdtscp(&tsc_aux);
-	#else
-
 	#endif
 	
-		
+	(*fuzzer)->Seed = g_state;	
 	(*fuzzer)->FuzzPossibility = DEFAULT_FUZZ_POSSIBILITY;
 	(*fuzzer)->UnmapPossibility = DEFAULT_UNMAP_POSSIBILITY;
 	(*fuzzer)->Iterations = 0;

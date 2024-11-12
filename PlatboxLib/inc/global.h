@@ -73,7 +73,83 @@ void init_os_specifics();
 	#define IOCTL_READ_KMEM CTL_CODE(FILE_DEVICE_UNKNOWN, 0x816, METHOD_BUFFERED, FILE_ANY_ACCESS)
 	#define IOCTL_WRITE_KMEM CTL_CODE(FILE_DEVICE_UNKNOWN, 0x817, METHOD_BUFFERED, FILE_ANY_ACCESS)
 	#define IOCTL_GET_PHYSICAL_RANGES CTL_CODE(FILE_DEVICE_UNKNOWN, 0x818, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define IOCTL_SINKCLOSE  CTL_CODE(FILE_DEVICE_UNKNOWN, 0x820, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define IOCTL_READ_MSR_FOR_CORE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x821, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define IOCTL_WRITE_MSR_FOR_CORE CTL_CODE(FILE_DEVICE_UNKNOWN, 0x822, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define IOCTL_GET_PHYSICAL_ADDRESS CTL_CODE(FILE_DEVICE_UNKNOWN, 0x823, METHOD_BUFFERED, FILE_ANY_ACCESS)
+	#define IOCTL_INDEX_IO_OPERATION CTL_CODE(FILE_DEVICE_UNKNOWN, 0x824, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #endif
+
+#define IA32_EFER 0xC0000080
+
+
+
+#pragma pack(1)
+struct segment_descriptor {
+	UINT16 selector;
+	char   rsvd[6];
+	UINT64 descriptor;
+};
+
+struct SMM_SAVE_STATE {
+	/* FE00h */ struct segment_descriptor es;
+	/* FE10h */ struct segment_descriptor cs;
+	/* FE20h */ struct segment_descriptor ss;
+	/* FE30h */ struct segment_descriptor ds;
+	/* FE40h */ struct segment_descriptor fs;
+	/* FE50h */ struct segment_descriptor gs;
+	/* FE60h */ char   gdtr[16];
+	/* FE70h */ char   ldtr[16];
+	/* FE80h */ char   idtr[16];
+	/* FE90h */ char   tr[16];
+	/* FEA0h */ UINT64 io_restart_rip;
+	/* FEA8h */ UINT64 io_restart_rcx;
+	/* FEB0h */ UINT64 io_restart_rsi;
+	/* FEB8h */ UINT64 io_restart_rdi;
+	/* FEC0h */ UINT32 smm_io_trap_offset;
+	/* FEC4h */ UINT32 local_smi_status;
+	/* FEC8h */ char   smm_io_restart_byte;
+	/* FEC9h */ char   auto_halt_restart_offset;
+	/* FECAh */ char   nmi_mask;
+	/* FECBh */ char   rsvd0[5];
+	/* FED0h */ UINT64 efer;
+	/* FED8h */ UINT64 smm_svm_state;
+	/* FEE0h */ UINT64 guest_vmcb_physical_address;
+	/* FEE8h */ UINT64 svm_virtual_interrupt_control;
+	/* FEF0h */ char   rsvd1[12];
+	/* FEFCh */ UINT32 smm_revision_identifier;
+	/* FFF0h */ UINT32 smm_base;
+	/* FFF4h */ char   rsvd2[28];
+	/* FF20h */ UINT64 guest_pat;
+	/* FF28h */ UINT64 host_efer;
+	/* FF30h */ UINT64 host_cr4;
+	/* FF38h */ UINT64 nested_cr3;
+	/* FF40h */ UINT64 host_cr0;
+	/* FF48h */ UINT64 cr4;
+	/* FF50h */ UINT64 cr3;
+	/* FF58h */ UINT64 cr0;
+	/* FF60h */ UINT64 dr7;
+	/* FF68h */ UINT64 dr6;
+	/* FF70h */ UINT64 rflags;
+	/* FF78h */ UINT64 rip;
+	/* FF80h */ UINT64 r15;
+	/* FF88h */ UINT64 r14;
+	/* FF90h */ UINT64 r13;
+	/* FF98h */ UINT64 r12;
+	/* FFA0h */ UINT64 r11;
+	/* FFA8h */ UINT64 r10;
+	/* FFB0h */ UINT64 r9;
+	/* FFB8h */ UINT64 r8;
+	/* FFC0h */ UINT64 rdi;
+	/* FFC8h */ UINT64 rsi;
+	/* FFD0h */ UINT64 rbp;
+	/* FFD8h */ UINT64 rsp;
+	/* FFE0h */ UINT64 rbx;
+	/* FFE8h */ UINT64 rdx;
+	/* FFF0h */ UINT64 rcx;
+	/* FFF8h */ UINT64 rax;
+};
+
 
 struct alloc_user_physmem {
 	UINT64 va;
@@ -104,6 +180,15 @@ struct alloc_user_physmem {
 		UINT64 r15;
 		// apend here?
 	} SW_SMI_CALL, *PSW_SMI_CALL;
+
+	/// <summary>
+	/// This is used for Sinkclose bug
+	/// Has to be allocated below 4GB in order to work with the vuln
+	/// </summary>
+	typedef struct _SW_SMI_CALL_SINKCLOSE {
+		UINT64 TriggerPort;
+		SMM_SAVE_STATE SmmSaveState;
+	} SW_SMI_CALL_SINKCLOSE, *PSW_SMI_CALL_SINKCLOSE;
 
 	typedef struct _READ_PCI_CONFIGURATION_SPACE_CALL {
 		UINT8 bus;
@@ -174,6 +259,39 @@ struct alloc_user_physmem {
 		UINT16 port;
 		UINT32 data;
 	} IO_PORT_CALL, *PIO_PORT_CALL;
+
+	typedef struct _READ_MSR_FOR_CORE_CALL {
+		UINT32 core_id;
+		UINT32 msr;
+		UINT64 result;
+	} READ_MSR_FOR_CORE_CALL, *PREAD_MSR_FOR_CORE_CALL;
+
+	typedef struct _WRITE_MSR_FOR_CORE_CALL {
+		UINT32 core_id;
+		UINT32 msr;
+		UINT64 value;
+	} WRITE_MSR_FOR_CORE_CALL, *PWRITE_MSR_FOR_CORE_CALL;
+
+	enum INDEX_IO_OP {
+		INDEX_IO_BYTE_READ_BYTE = 0,
+		INDEX_IO_WORD_READ_BYTE = 1,
+		INDEX_IO_BYTE_READ_WORD = 2,
+		INDEX_IO_WORD_READ_WORD = 3,
+		INDEX_IO_BYTE_WRITE_BYTE = 4,
+		INDEX_IO_WORD_WRITE_BYTE = 5,
+		INDEX_IO_BYTE_WRITE_WORD = 6,
+		INDEX_IO_WORD_WRITE_WORD = 7
+	};
+
+
+	typedef struct _IO_PORT_INDEX_CALL {
+		enum   INDEX_IO_OP  operation;
+		UINT16 cmd_port;
+		UINT16 data_port;
+		UINT16 index;
+		UINT16 data;
+	} IO_PORT_INDEX_CALL, * PIO_PORT_INDEX_CALL;
+
 #endif
 
 typedef struct _PCI_CONFIG_ADDRESS {

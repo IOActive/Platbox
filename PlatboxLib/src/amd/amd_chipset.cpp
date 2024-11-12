@@ -6,6 +6,7 @@
 #include "physmem.h"
 #include "msr.h"
 #include "amd_psp.h"
+#include "common_chipset.h"
 
 LPC_ISA_Bridge g_lpc_isa_bridge_registers;
 DWORD64 g_MmioCfgBaseAddr;
@@ -78,6 +79,16 @@ void amd_print_smm_base() {
     printf("\n");
 }
 
+void amd_print_smm_base_for_core(int core) {
+    DWORD64 smm_base = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMM_BASE_ADDRESS, &smm_base);
+    printf("Core-%d - MSR C001_0111 SMM Base Address (SMM_BASE)\n", core);
+	printf(" => Base: %lx\n", smm_base);
+	printf("   -> SMI-Handler Entry Point: %lx\n", smm_base + AMD_SMI_HANDLER_ENTRY_POINT);
+    printf("   -> SMM Save-State Area    : %lx\n", smm_base + AMD_SMM_STATE_SAVE_AREA);
+    printf("\n");
+}
+
 
 void amd_print_smm_tseg_addr() {    
     DWORD64 smm_tseg_base = 0;
@@ -86,6 +97,23 @@ void amd_print_smm_tseg_addr() {
     get_tseg_info(&smm_tseg_base, &tseg_size);
 
     printf("MSR C001_0112 SMM TSeg Base Address (SMMAddr)\n");
+	printf(" => Base : %08lx\n", smm_tseg_base);
+    printf(" => Limit: %08lx\n", smm_tseg_base + tseg_size);
+    printf("\n");	
+}
+
+void amd_print_smm_tseg_addr_for_core(int core) {
+    DWORD64 smm_tseg_base = 0;
+    UINT32  tseg_size = 0;
+
+    DWORD64 smm_tseg_mask = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMM_TSEG_BASE_ADDRESS, &smm_tseg_base);
+    do_read_msr_for_core(core, AMD_MSR_SMM_TSEG_MASK, &smm_tseg_mask);
+
+    UINT32 tseg_mask = (UINT32) (smm_tseg_mask & 0xfffffe0000);
+    tseg_size = ~tseg_mask; 
+
+    printf("Core-%d - MSR C001_0112 SMM TSeg Base Address (SMMAddr)\n", core);
 	printf(" => Base : %08lx\n", smm_tseg_base);
     printf(" => Limit: %08lx\n", smm_tseg_base + tseg_size);
     printf("\n");	
@@ -101,6 +129,24 @@ void amd_print_smm_tseg_mask() {
     DWORD64 smm_tseg_mask = amd_retrieve_smm_tseg_mask();
 
     printf("MSR C001_0113 SMM TSeg Mask (SMMMask)\n");
+	printf(" => Value: %016llx\n", smm_tseg_mask);	
+    printf("   -> TSegMask: %016llx\n", smm_tseg_mask & 0xfffffe0000); // TSegMask[39:17]
+    printf("   -> TMTypeDram: %d\n", (smm_tseg_mask >> 12) & 0b111);
+    printf("   -> AMTypeDram: %d\n", (smm_tseg_mask >> 8) & 0b111);
+    printf("   -> TMTypeIoWc: %d\n", (smm_tseg_mask >> 5) & 1);
+    printf("   -> AMTypeIoWc: %d\n", (smm_tseg_mask >> 4) & 1);
+    printf("   -> TClose: %d\n", (smm_tseg_mask >> 3) & 1);
+    printf("   -> AClose: %d\n", (smm_tseg_mask >> 2) & 1);
+    printf("   -> TValid: %d\n", (smm_tseg_mask >> 1) & 1);
+    printf("   -> AValid: %d\n", (smm_tseg_mask >> 0) & 1);
+    printf("\n");
+}
+
+void amd_print_smm_tseg_mask_for_core(int core) {    
+    DWORD64 smm_tseg_mask = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMM_TSEG_MASK, &smm_tseg_mask);    
+
+    printf("Core-%d - MSR C001_0113 SMM TSeg Mask (SMMMask)\n", core);
 	printf(" => Value: %016llx\n", smm_tseg_mask);	
     printf("   -> TSegMask: %016llx\n", smm_tseg_mask & 0xfffffe0000); // TSegMask[39:17]
     printf("   -> TMTypeDram: %d\n", (smm_tseg_mask >> 12) & 0b111);
@@ -144,6 +190,18 @@ void amd_print_apic_bar() {
     printf("\n");
 }
 
+void amd_print_apic_bar_for_core(int core) {
+    DWORD64 apic_bar = 0;
+    do_read_msr_for_core(core, AMD_MSR_APIC_BAR, &apic_bar);
+
+    printf("Core-%d - MSR 0000_001B APIC Base Address (APIC_BAR)\n", core);
+	printf(" => Value: %lx\n", apic_bar);
+	printf("   -> BA: %lx\n", apic_bar & 0xFFFFFFFFFFFFF000);
+    printf("   -> Enabled: %d\n", (apic_bar >> 11) & 1);
+    printf("   -> BSC: %d\n", (apic_bar >> 8) & 1);
+    printf("\n");
+}
+
 DWORD64 amd_retrieve_hwcr_smmlock() {
     DWORD64 hwcr = 0;
     do_read_msr(AMD_MSR_HARDWARE_CONFIGURATION, &hwcr);
@@ -157,6 +215,29 @@ void amd_print_hwcr_smmlock() {
     printf("MSR C001_0015 Hardware Configuration (HWCR)\n");
 	printf(" => Value: %lx\n", hwcr);
 	printf("   -> SMMLock: %d - ", smm_lock != 0 ? 1 : 0);
+    if (smm_lock == 0) {
+        print_red("FAILED\n");
+    } else {
+        print_green("OK\n");
+    }
+    printf("\n");
+}
+
+void amd_print_hwcr_smmlock_for_core(int core) {
+    DWORD64 hwcr = 0;
+    do_read_msr_for_core(core, AMD_MSR_HARDWARE_CONFIGURATION, &hwcr);
+
+    int smm_lock = hwcr & BIT_MSR_HWCR_SMMLOCK;
+    int smm_base_lock = hwcr & BIT_MSR_HWCR_SMM_BASE_LOCK;
+    printf("Core-%d - MSR C001_0015 Hardware Configuration (HWCR)\n", core);
+	printf(" => Value: %lx\n", hwcr);
+    printf("   -> SMMBaseLock: %d - ", smm_base_lock != 0 ? 1 : 0);
+    if (smm_base_lock == 0) {
+        print_red("FAILED\n");
+    } else {
+        print_green("OK\n");
+    }
+	printf("   ->     SMMLock: %d - ", smm_lock != 0 ? 1 : 0);
     if (smm_lock == 0) {
         print_red("FAILED\n");
     } else {
@@ -214,12 +295,77 @@ void amd_print_smi_on_io_trap_configuration() {
     printf("\n"); 
 }
 
+
+void amd_print_smi_on_io_trap_configuration_for_core(int core) {
+   
+    DWORD64 smi_io_trap = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMI_ON_IO_TRAP_0, &smi_io_trap);
+
+    printf("Core-%d - MSR C001_0050 IO Trap (SMI_ON_IO_TRAP_0])\n", core);
+	printf(" => Value: %lx\n", smi_io_trap);
+	printf("   -> SmiOnRdEn: %d\n", (smi_io_trap >> 63) & 1);
+    printf("   -> SmiOnWrEn: %d\n", (smi_io_trap >> 62) & 1);
+    printf("   -> ConfigSmi: %d\n", (smi_io_trap >> 61) & 1);
+    printf("   -> SmiMask: %08x\n", (smi_io_trap >> 32) & 0xffffff);
+    printf("   -> SmiAddr: %08x\n", (smi_io_trap) & 0xFFFFFFFF);
+
+    smi_io_trap = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMI_ON_IO_TRAP_1, &smi_io_trap);
+
+    printf("Core-%d - MSR C001_0051 IO Trap (SMI_ON_IO_TRAP_1])\n", core);
+	printf(" => Value: %lx\n", smi_io_trap);
+	printf("   -> SmiOnRdEn: %d\n", (smi_io_trap >> 63) & 1);
+    printf("   -> SmiOnWrEn: %d\n", (smi_io_trap >> 62) & 1);
+    printf("   -> ConfigSmi: %d\n", (smi_io_trap >> 61) & 1);
+    printf("   -> SmiMask: %08x\n", (smi_io_trap >> 32) & 0xffffff);
+    printf("   -> SmiAddr: %08x\n", (smi_io_trap) & 0xFFFFFFFF);
+
+    smi_io_trap = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMI_ON_IO_TRAP_2, &smi_io_trap);
+
+    printf("Core-%d - MSR C001_0052 IO Trap (SMI_ON_IO_TRAP_2])\n", core);
+	printf(" => Value: %lx\n", smi_io_trap);
+	printf("   -> SmiOnRdEn: %d\n", (smi_io_trap >> 63) & 1);
+    printf("   -> SmiOnWrEn: %d\n", (smi_io_trap >> 62) & 1);
+    printf("   -> ConfigSmi: %d\n", (smi_io_trap >> 61) & 1);
+    printf("   -> SmiMask: %08x\n", (smi_io_trap >> 32) & 0xffffff);
+    printf("   -> SmiAddr: %08x\n", (smi_io_trap) & 0xFFFFFFFF);
+
+    smi_io_trap = 0;
+    do_read_msr_for_core(core, AMD_MSR_SMI_ON_IO_TRAP_3, &smi_io_trap);
+
+    printf("Core-%d - MSR C001_0053 IO Trap (SMI_ON_IO_TRAP_3])\n", core);
+	printf(" => Value: %lx\n", smi_io_trap);
+	printf("   -> SmiOnRdEn: %d\n", (smi_io_trap >> 63) & 1);
+    printf("   -> SmiOnWrEn: %d\n", (smi_io_trap >> 62) & 1);
+    printf("   -> ConfigSmi: %d\n", (smi_io_trap >> 61) & 1);
+    printf("   -> SmiMask: %08x\n", (smi_io_trap >> 32) & 0xffffff);
+    printf("   -> SmiAddr: %08x\n", (smi_io_trap) & 0xFFFFFFFF);
+
+    printf("\n"); 
+}
+
 void amd_print_io_trap_control_status() {
     
     DWORD64 io_trap_ctl_sts = 0;
     do_read_msr(AMD_MSR_IO_TRAP_CTL_STS, &io_trap_ctl_sts);
 
     printf("MSR C001_0054 IO Trap Control (SMI_ON_IO_TRAP_CTL_STS)\n");
+	printf(" => Value: %016lx\n", io_trap_ctl_sts);
+	printf("   -> IoTrapEn: %d\n", (io_trap_ctl_sts >> 15) & 1);
+    printf("   -> SmiEn3 (MSR C001_0053): %d\n", (io_trap_ctl_sts >> 7) & 1);
+    printf("   -> SmiEn2 (MSR C001_0052): %d\n", (io_trap_ctl_sts >> 5) & 1);
+    printf("   -> SmiEn1 (MSR C001_0051): %d\n", (io_trap_ctl_sts >> 3) & 1);
+    printf("   -> SmiEn0 (MSR C001_0050): %d\n", (io_trap_ctl_sts >> 1) & 1);
+    printf("\n");
+}
+
+void amd_print_io_trap_control_status_for_core(int core) {
+    
+    DWORD64 io_trap_ctl_sts = 0;
+    do_read_msr_for_core(core, AMD_MSR_IO_TRAP_CTL_STS, &io_trap_ctl_sts);
+
+    printf("Core-%d - MSR C001_0054 IO Trap Control (SMI_ON_IO_TRAP_CTL_STS)\n", core);
 	printf(" => Value: %016lx\n", io_trap_ctl_sts);
 	printf("   -> IoTrapEn: %d\n", (io_trap_ctl_sts >> 15) & 1);
     printf("   -> SmiEn3 (MSR C001_0053): %d\n", (io_trap_ctl_sts >> 7) & 1);
@@ -239,6 +385,18 @@ void amd_print_mmio_ba() {
     DWORD64 mmio_ba = amd_retrieve_mmio_ba();
 
     printf("MSR C001_0058 MMIO Configuration Base Address\n");
+	printf(" => Value: %016lx\n", mmio_ba);
+	printf("   -> MmioCfgBaseAddr: %016lx\n", (mmio_ba & 0xfff0000000));
+    printf("   -> BusRange: %d\n", (mmio_ba >> 2) & 0b1111);
+    printf("   -> Enable: %d\n", (mmio_ba >> 0) & 1);
+    printf("\n");
+}
+
+void amd_print_mmio_ba_for_core(int core) {
+    DWORD64 mmio_ba = 0;
+    do_read_msr_for_core(core, AMD_MSR_MMIO_CONFIGURATION_BASE_ADDRRESS, &mmio_ba);
+
+    printf("Core-%d - MSR C001_0058 MMIO Configuration Base Address\n", core);
 	printf(" => Value: %016lx\n", mmio_ba);
 	printf("   -> MmioCfgBaseAddr: %016lx\n", (mmio_ba & 0xfff0000000));
     printf("   -> BusRange: %d\n", (mmio_ba >> 2) & 0b1111);
@@ -326,6 +484,15 @@ void amd_print_msr_tom2() {
     printf("\n");
 }
 
+void amd_print_msr_tom2_for_core(int core) {
+    DWORD64 tom2 = 0;
+    do_read_msr_for_core(core, AMD_MSR_TOP_OF_MEMORY_2, &tom2);
+
+    printf("Core-%d - MSR C001_001D Top Of Memory 2 (TOM2)\n", core);
+	printf(" => Value: %016llx\n", tom2);
+    printf("\n");
+}
+
 
 void amd_print_root_complex_tom() {
 	// D0F0x90 Northbridge Top of Memory
@@ -344,6 +511,15 @@ void amd_print_msr_tom() {
     do_read_msr(AMD_MSR_TOP_OF_MEMORY, &tom);
 
     printf("MSR C001_001A Top Of Memory (TOM)\n");
+	printf(" => Value: %016llx\n", tom);
+    printf("\n");
+}
+
+void amd_print_msr_tom_for_core(int core) {
+    DWORD64 tom = 0;
+    do_read_msr_for_core(core, AMD_MSR_TOP_OF_MEMORY, &tom);
+
+    printf("Core-%d - MSR C001_001A Top Of Memory (TOM)\n", core);
 	printf(" => Value: %016llx\n", tom);
     printf("\n");
 }
@@ -398,6 +574,23 @@ void amd_print_syscfg() {
     do_read_msr(AMD_MSR_SYS_CFG, &syscfg);
 
     printf("MSR C001_0010 System Configuration (SYS_CFG)\n");
+	printf(" => Value: %016llx\n", syscfg);
+    printf("   -> Tom2ForceMemTypeWB: %d\n", (syscfg >> 22) & 1);
+    printf("   -> MtrrTom2En: %d\n", (syscfg >> 21) & 1);
+    printf("   -> MtrrVarDramEn: %d\n", (syscfg >> 20) & 1);
+    printf("   -> MtrrFixDramModEn: %d\n", (syscfg >> 19) & 1);
+    printf("   -> MtrrFixDramEn: %d\n", (syscfg >> 18) & 1);
+    printf("   -> SysUcLockEn: %d\n", (syscfg >> 17) & 1);
+    printf("\n");
+}
+
+
+void amd_print_syscfg_for_core(int core) {
+    
+    DWORD64 syscfg = 0;
+    do_read_msr_for_core(core, AMD_MSR_SYS_CFG, &syscfg);
+
+    printf("Core-%d - MSR C001_0010 System Configuration (SYS_CFG)\n", core);
 	printf(" => Value: %016llx\n", syscfg);
     printf("   -> Tom2ForceMemTypeWB: %d\n", (syscfg >> 22) & 1);
     printf("   -> MtrrTom2En: %d\n", (syscfg >> 21) & 1);
@@ -676,25 +869,60 @@ void amd_print_chipset_information() {
     
     printf("\n");
 
-    amd_print_smm_base();
-    amd_print_smm_tseg_addr();
-    amd_print_smm_tseg_mask();
-    amd_print_hwcr_smmlock();
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_smm_base_for_core(i);
+    }
 
-    amd_print_syscfg();
-    //amd_print_smi_on_io_trap_configuration();
-    amd_print_io_trap_control_status();
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_smm_tseg_addr_for_core(i);
+    }
 
-    amd_print_apic_bar();
-    amd_print_mmio_ba();
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_smm_tseg_mask_for_core(i);
+    }
+
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_hwcr_smmlock_for_core(i);
+    }
+    
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_syscfg_for_core(i);
+    }
+
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_smi_on_io_trap_configuration_for_core(i);
+    }
+    
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_io_trap_control_status_for_core(i);
+    }
+    
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_apic_bar_for_core(i);
+    }
+
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_mmio_ba_for_core(i);
+    }
+
+    
 
     amd_print_root_complex_pci_control();
     amd_print_root_complex_nb_control();
     amd_print_root_complex_mmio_range();
     amd_print_root_complex_tom2();
-    amd_print_msr_tom2();
+
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_msr_tom2_for_core(i);
+    }
+
+    
     amd_print_root_complex_tom();
-    amd_print_msr_tom();
+
+    for (int i = 0; i < get_number_of_cores(); i++) {
+        amd_print_msr_tom_for_core(i);
+    }
+    
     //amd_print_dram_range_base_limit();
     //amd_print_mmio_base_limit_ranges();
     //amd_print_dram_system_address_range();
