@@ -45,7 +45,7 @@ if (WIN32)
         src/smm/smi.cpp
         src/smm/smi_fuzz.cpp
 
-        src/ec/ite8638.cpp
+        # src/ec/ite8638.cpp
     )
 endif (WIN32)
 
